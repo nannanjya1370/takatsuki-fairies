@@ -254,6 +254,18 @@ function addMember() {
   save(); renderMembers();
 }
 
+function renameMember(id) {
+  const m = member(id);
+  const input = prompt(`「${m.name}」の新しい名前を入力してください`, m.name);
+  if (input === null) return;
+  const name = input.trim().slice(0, 20);
+  if (!name || name === m.name) return;
+  if (state.members.some(x => x.name === name && x.id !== id)) { alert("同じ名前のメンバーがいます"); return; }
+  m.name = name;
+  save(); renderMembers();
+  if (currentMatches) renderMatches(); // 対戦表の表示名も更新
+}
+
 function removeMember(id) {
   const m = member(id);
   if (!confirm(`「${m.name}」を削除しますか？（レーティング等も消えます）`)) return;
@@ -288,6 +300,7 @@ function renderMembers() {
         <span class="member-name">${esc(m.name)}</span>
         <span class="badge rating-badge">R ${m.rating}</span>
         <span class="small text-muted">参加${m.attendCount || 0}回${rankHtml}・${m.games}戦${m.wins}勝</span>
+        <button class="btn btn-sm btn-outline-pk py-0" onclick="renameMember(${m.id})">✎</button>
         <button class="btn btn-sm btn-outline-danger py-0" onclick="removeMember(${m.id})">×</button>
       </div>`;
     }).join("");
