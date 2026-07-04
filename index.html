@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏸 高槻妖精会</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  :root {
+    --pk-bg: #fff5f8;
+    --pk-light: #ffe3ec;
+    --pk-main: #ff8fab;
+    --pk-strong: #f06595;
+    --pk-deep: #c2255c;
+    --pk-border: #ffc9d9;
+  }
+  body {
+    background: var(--pk-bg);
+    padding-bottom: 80px;
+  }
+  .app-header {
+    background: linear-gradient(135deg, #ffd1dc, #ff9eb5);
+    color: #fff;
+    padding: 22px 0;
+    margin-bottom: 20px;
+    border-bottom: 4px solid var(--pk-main);
+    box-shadow: 0 4px 14px rgba(240, 101, 149, .25);
+  }
+  .app-header h1 {
+    font-weight: 800; letter-spacing: 3px; margin: 0;
+    color: #fff; text-shadow: 0 2px 6px rgba(194, 37, 92, .35);
+  }
+  .app-header h1 .accent { color: var(--pk-deep); }
+  .app-subtitle {
+    font-family: Georgia, "Times New Roman", serif;
+    font-style: italic; letter-spacing: 5px;
+    font-size: .95rem; color: #fff; opacity: .9; margin-top: 4px;
+  }
+  .card {
+    border: 1px solid var(--pk-border); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 4px 12px rgba(240, 101, 149, .12);
+    margin-bottom: 18px;
+    background: #fff;
+  }
+  .card-header {
+    font-weight: bold;
+    background: var(--pk-light);
+    color: var(--pk-deep);
+    border-bottom: 2px solid var(--pk-main);
+    letter-spacing: 1px;
+  }
+  .member-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid #ffeef4; flex-wrap: wrap; }
+  .member-row:last-child { border-bottom: none; }
+  .member-name { flex: 1; font-weight: 600; color: #59344a; min-width: 90px; }
+  .rating-badge {
+    font-variant-numeric: tabular-nums; min-width: 62px; text-align: center;
+    background: var(--pk-main) !important; color: #fff;
+  }
+  .rank-badge { font-size: .72rem; border: 1px solid rgba(0,0,0,.08); }
+  .rank-silver  { background: #e9ecef; color: #495057; }
+  .rank-gold    { background: #ffe8a1; color: #9a6700; }
+  .rank-diamond { background: linear-gradient(135deg, #d0ebff, #e7f5ff); color: #1971c2; }
+  .rank-legend {
+    font-size: .74rem; color: #b08698; text-align: right;
+    margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--pk-border);
+  }
+  .court-card {
+    border: 1px solid var(--pk-border);
+    border-left: 6px solid var(--pk-main);
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(240, 101, 149, .12);
+  }
+  .court-title { color: var(--pk-deep); font-weight: 800; letter-spacing: 1px; }
+  .team-box {
+    background: #fff0f5; border: 1px solid var(--pk-border);
+    border-radius: 10px; padding: 8px 10px;
+  }
+  .vs-label { font-weight: 800; color: var(--pk-strong); font-size: 1.05rem; }
+  .score-input { max-width: 70px; text-align: center; font-size: 1.1rem; }
+  .rest-box { background: #fff8dc; border: 1px solid #ffe08a; border-radius: 10px; padding: 8px 12px; }
+  .form-check-input:checked { background-color: var(--pk-strong); border-color: var(--pk-strong); }
+  .btn-main {
+    background: var(--pk-main); border: 2px solid var(--pk-strong);
+    color: #fff; font-weight: 800; letter-spacing: 1px;
+  }
+  .btn-main:hover, .btn-main:focus {
+    background: var(--pk-strong); border-color: var(--pk-deep); color: #fff;
+  }
+  .btn-outline-pk { color: var(--pk-deep); border: 2px solid var(--pk-main); font-weight: 600; background: #fff; }
+  .btn-outline-pk:hover { background: var(--pk-light); color: var(--pk-deep); }
+  .btn-check:checked + .btn-outline-pk {
+    background: var(--pk-strong); color: #fff; border-color: var(--pk-strong);
+  }
+  .format-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .format-row .court-label { min-width: 84px; font-weight: 700; color: var(--pk-deep); }
+  .fmt-badge { font-size: .75rem; vertical-align: middle; }
+  .fmt-doubles { background: var(--pk-strong); color: #fff; }
+  .fmt-singles { background: #ffd43b; color: #7a5200; }
+  .delta-up { color: #198754; font-weight: bold; }
+  .delta-down { color: #dc3545; font-weight: bold; }
+  #json-io { font-size: .78rem; font-family: monospace; }
+  .data-card { border-style: dashed; box-shadow: none; }
+  .data-header {
+    background: #fff; color: #b08698;
+    border-bottom: none; font-size: .85rem; font-weight: 600;
+    padding: 8px 16px; cursor: pointer; display: flex; align-items: center;
+    letter-spacing: 1px;
+  }
+  .data-card .small { font-size: .74rem; }
+  @media (max-width: 576px) {
+    .container { padding-left: 10px; padding-right: 10px; }
+    h1 { font-size: 1.35rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <div class="container" style="max-width: 720px;">
+    <h1>🏸 高槻<span class="accent">妖精会</span></h1>
+    <div class="app-subtitle">Takatsuki Fairies</div>
+  </div>
+</div>
+
+<div class="container" style="max-width: 720px;">
+
+  <!-- メンバー管理 -->
+  <div class="card">
+    <div class="card-header">メンバー管理 <small class="opacity-75">（チェック＝今回の参加者）</small></div>
+    <div class="card-body">
+      <div class="input-group mb-3">
+        <input type="text" id="new-name" class="form-control" placeholder="名前を入力" maxlength="20">
+        <button class="btn btn-main" onclick="addMember()">追加</button>
+      </div>
+      <div class="d-flex gap-2 mb-2">
+        <button class="btn btn-sm btn-outline-pk" onclick="checkAll(false)">全解除</button>
+        <span class="ms-auto align-self-center small text-muted">参加: <b id="attend-count">0</b>人</span>
+      </div>
+      <div id="member-list"></div>
+      <div class="rank-legend">ランク：🥈 シルバー（5回〜）／ 🥇 ゴールド（15回〜）／ 💎 ダイヤモンド（30回〜）</div>
+    </div>
+  </div>
+
+  <!-- 設定 -->
+  <div class="card">
+    <div class="card-header">コート・試合形式</div>
+    <div class="card-body">
+      <label class="form-label fw-bold small">使用コート数</label>
+      <div class="btn-group w-100 mb-3" role="group">
+        <input type="radio" class="btn-check" name="courts" id="c1" value="1" onchange="renderFormatRows()">
+        <label class="btn btn-outline-pk" for="c1">1面</label>
+        <input type="radio" class="btn-check" name="courts" id="c2" value="2" checked onchange="renderFormatRows()">
+        <label class="btn btn-outline-pk" for="c2">2面</label>
+        <input type="radio" class="btn-check" name="courts" id="c3" value="3" onchange="renderFormatRows()">
+        <label class="btn btn-outline-pk" for="c3">3面</label>
+      </div>
+
+      <label class="form-label fw-bold small">コートごとの試合形式</label>
+      <div id="format-rows" class="mb-2"></div>
+      <div class="small text-muted mb-2">必要人数: <b id="needed-count">8</b>人</div>
+
+      <button class="btn btn-main btn-lg w-100 mt-1" onclick="generateMatches()">Bibbidi-Bobbidi-Boo !!</button>
+      <div id="gen-warning" class="mt-2"></div>
+    </div>
+  </div>
+
+  <!-- 対戦表 -->
+  <div class="card" id="matches-card" style="display:none">
+    <div class="card-header">今回の対戦 <span id="mix-badge"></span></div>
+    <div class="card-body" id="matches-area"></div>
+  </div>
+
+  <!-- データ管理（折りたたみ式・コンパクト） -->
+  <div class="card data-card">
+    <div class="card-header data-header" onclick="toggleData()">
+      <span>データ管理・引っ越し</span>
+      <span class="ms-auto" id="data-arrow">▸</span>
+    </div>
+    <div class="card-body py-2" id="data-body" style="display:none">
+      <div class="small text-muted mb-1">スマホ間の移行はJSONテキストのコピー＆ペーストが簡単です。</div>
+      <div class="d-flex flex-wrap gap-1 mb-1">
+        <button class="btn btn-outline-pk btn-sm py-0" onclick="showJSON()">データを表示</button>
+        <button class="btn btn-outline-pk btn-sm py-0" onclick="copyJSON()">コピー</button>
+        <button class="btn btn-main btn-sm py-0" onclick="loadJSONText()">貼り付けたデータを読み込み</button>
+      </div>
+      <textarea id="json-io" class="form-control mb-2" rows="3"
+        placeholder="「データを表示」→コピーして他のスマホへ。受け取る側はここに貼り付けて「読み込み」。"></textarea>
+      <div class="d-flex flex-wrap gap-1 align-items-center">
+        <button class="btn btn-outline-pk btn-sm py-0" onclick="exportJSON()">ファイル保存</button>
+        <label class="btn btn-outline-pk btn-sm py-0 mb-0">
+          ファイル読み込み<input type="file" accept=".json" hidden onchange="importJSON(this)">
+        </label>
+        <button class="btn btn-outline-danger btn-sm py-0 ms-auto" onclick="resetAll()">全データ初期化</button>
+      </div>
+      <div class="small text-muted mt-1">※データは各スマホのブラウザに自動保存。端末間の自動同期はありません。</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+
+// ================= データ =================
+const STORAGE_KEY = "badminton-pairing-v1";
+const INITIAL_RATING = 1000;
+const RANKS = [
+  { min: 30, name: "ダイヤモンド", cls: "rank-diamond", icon: "💎" },
+  { min: 15, name: "ゴールド",     cls: "rank-gold", icon: "🥇" },
+  { min: 5,  name: "シルバー",     cls: "rank-silver", icon: "🥈" },
+];
+
+let state = {
+  members: [],        // {id, name, rating, games, wins, attend, attendCount, lastAttend}
+  togetherCounts: {}, // "idA|idB"(小さい順) -> ペアを組んだ回数
+  vsCounts: {},       // "idA|idB" -> 対戦した回数
+  nextId: 1,
+};
+let session = { playCount: {} }; // ページを開いてからの出場回数（休憩の公平化用）
+let courtFormats = ["doubles", "doubles", "doubles"]; // コートごとの形式（UI選択を保持）
+let currentMatches = null; // {mix, courts:[{format,teamA,teamB,saved}], resting:[ids]}
+
+function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) state = Object.assign(state, JSON.parse(raw));
+    // 旧バージョンのデータに参加回数フィールドを補完
+    state.members.forEach(m => {
+      if (m.attendCount === undefined) m.attendCount = 0;
+      if (m.lastAttend === undefined) m.lastAttend = "";
+    });
+  } catch (e) { console.warn("load failed", e); }
+}
+function member(id) { return state.members.find(m => m.id === id); }
+function pairKey(a, b) { return a < b ? `${a}|${b}` : `${b}|${a}`; }
+function togetherCount(a, b) { return state.togetherCounts[pairKey(a, b)] || 0; }
+function vsCount(a, b) { return state.vsCounts[pairKey(a, b)] || 0; }
+function courtSize(fmt) { return fmt === "doubles" ? 4 : 2; }
+function rankOf(m) { return RANKS.find(r => (m.attendCount || 0) >= r.min) || null; }
+function today() { return new Date().toISOString().slice(0, 10); }
+
+// ================= メンバー管理 =================
+function addMember() {
+  const input = document.getElementById("new-name");
+  const name = input.value.trim();
+  if (!name) return;
+  if (state.members.some(m => m.name === name)) { alert("同じ名前のメンバーがいます"); return; }
+  state.members.push({
+    id: state.nextId++, name, rating: INITIAL_RATING,
+    games: 0, wins: 0, attend: true, attendCount: 0, lastAttend: "",
+  });
+  input.value = "";
+  save(); renderMembers();
+}
+
+function removeMember(id) {
+  const m = member(id);
+  if (!confirm(`「${m.name}」を削除しますか？（レーティング等も消えます）`)) return;
+  state.members = state.members.filter(x => x.id !== id);
+  save(); renderMembers();
+}
+
+function toggleAttend(id) {
+  const m = member(id);
+  m.attend = !m.attend;
+  save(); renderMembers();
+}
+
+function checkAll(v) {
+  state.members.forEach(m => m.attend = v);
+  save(); renderMembers();
+}
+
+function renderMembers() {
+  const wrap = document.getElementById("member-list");
+  if (state.members.length === 0) {
+    wrap.innerHTML = `<p class="text-muted small mb-0">メンバーを追加してください</p>`;
+  } else {
+    wrap.innerHTML = state.members.map(m => {
+      const rank = rankOf(m);
+      const rankHtml = rank
+        ? ` <span class="badge rank-badge ${rank.cls}">${rank.icon} ${rank.name}</span>` : "";
+      return `
+      <div class="member-row">
+        <input class="form-check-input mt-0" type="checkbox" ${m.attend ? "checked" : ""}
+               onchange="toggleAttend(${m.id})" style="transform:scale(1.3)">
+        <span class="member-name">${esc(m.name)}</span>
+        <span class="badge rating-badge">R ${m.rating}</span>
+        <span class="small text-muted">参加${m.attendCount || 0}回${rankHtml}・${m.games}戦${m.wins}勝</span>
+        <button class="btn btn-sm btn-outline-danger py-0" onclick="removeMember(${m.id})">×</button>
+      </div>`;
+    }).join("");
+  }
+  document.getElementById("attend-count").textContent = state.members.filter(m => m.attend).length;
+}
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+
+// ================= コートごとの形式UI =================
+function courtCount() { return +document.querySelector('input[name="courts"]:checked').value; }
+
+function renderFormatRows() {
+  const n = courtCount();
+  const wrap = document.getElementById("format-rows");
+  wrap.innerHTML = Array.from({ length: n }, (_, i) => `
+    <div class="format-row">
+      <span class="court-label">コート${i + 1}：</span>
+      <div class="btn-group flex-grow-1" role="group">
+        <input type="radio" class="btn-check" name="fmt-${i}" id="fmt-${i}-d" value="doubles"
+               ${courtFormats[i] === "doubles" ? "checked" : ""} onchange="setFormat(${i},'doubles')">
+        <label class="btn btn-outline-pk btn-sm" for="fmt-${i}-d">ダブルス（4人）</label>
+        <input type="radio" class="btn-check" name="fmt-${i}" id="fmt-${i}-s" value="singles"
+               ${courtFormats[i] === "singles" ? "checked" : ""} onchange="setFormat(${i},'singles')">
+        <label class="btn btn-outline-pk btn-sm" for="fmt-${i}-s">シングルス（2人）</label>
+      </div>
+    </div>`).join("");
+  updateNeededCount();
+}
+
+function setFormat(i, fmt) {
+  courtFormats[i] = fmt;
+  updateNeededCount();
+}
+
+function updateNeededCount() {
+  const n = courtCount();
+  const total = courtFormats.slice(0, n).reduce((s, f) => s + courtSize(f), 0);
+  document.getElementById("needed-count").textContent = total;
+}
+
+// ================= 組み合わせ生成 =================
+function generateMatches() {
+  const warnEl = document.getElementById("gen-warning");
+  warnEl.innerHTML = "";
+  const attendees = state.members.filter(m => m.attend).map(m => m.id);
+  const wantedFormats = courtFormats.slice(0, courtCount());
+  const wantedTotal = wantedFormats.reduce((s, f) => s + courtSize(f), 0);
+
+  // 人数が足りない場合: 後ろのコートから外して組める分だけ生成
+  const activeFormats = [...wantedFormats];
+  while (activeFormats.length &&
+         activeFormats.reduce((s, f) => s + courtSize(f), 0) > attendees.length) {
+    activeFormats.pop();
+  }
+  if (activeFormats.length === 0) {
+    warnEl.innerHTML = `<div class="alert alert-danger py-2 mb-0">参加者が${attendees.length}人では1コートも組めません（コート1の${wantedFormats[0] === "doubles" ? "ダブルスには4人" : "シングルスには2人"}必要）。</div>`;
+    return;
+  }
+  const total = activeFormats.reduce((s, f) => s + courtSize(f), 0);
+  if (activeFormats.length < wantedFormats.length) {
+    warnEl.innerHTML = `<div class="alert alert-warning py-2 mb-0">⚠️ 参加${attendees.length}人では${wantedFormats.length}面（必要${wantedTotal}人）に足りないため、<b>コート${activeFormats.length}までの${activeFormats.length}面</b>で生成しました。</div>`;
+  }
+
+  // 参加回数カウント（同じ日は1回のみ加算）→ 会員ランクに反映
+  const t = today();
+  for (const id of attendees) {
+    const m = member(id);
+    if (m.lastAttend !== t) { m.lastAttend = t; m.attendCount = (m.attendCount || 0) + 1; }
+  }
+
+  // 出場回数が少ない人を優先して出場させる（休憩の公平化）
+  const sorted = [...attendees].sort((a, b) =>
+    (session.playCount[a] || 0) - (session.playCount[b] || 0) || Math.random() - 0.5);
+  const playing = sorted.slice(0, total);
+  const resting = sorted.slice(total);
+
+  // ★特殊ルール: 約30%でMIX戦（ハンデ戦）
+  const mix = Math.random() < 0.3;
+
+  // ランダム候補を大量生成してスコアリング（低ペナルティを採用）
+  let best = null, bestPenalty = Infinity;
+  for (let iter = 0; iter < 500; iter++) {
+    const shuffled = [...playing].sort(() => Math.random() - 0.5);
+    const cand = [];
+    let pos = 0;
+    for (const fmt of activeFormats) {
+      const g = shuffled.slice(pos, pos + courtSize(fmt));
+      pos += courtSize(fmt);
+      cand.push(fmt === "doubles"
+        ? { format: fmt, teamA: [g[0], g[1]], teamB: [g[2], g[3]] }
+        : { format: fmt, teamA: [g[0]], teamB: [g[1]] });
+    }
+    const p = penalty(cand, mix);
+    if (p < bestPenalty) { bestPenalty = p; best = cand; }
+  }
+
+  currentMatches = {
+    mix,
+    courts: best.map(c => ({ ...c, saved: false })),
+    resting,
+  };
+  save(); renderMembers(); renderMatches();
+}
+
+function penalty(cand, mix) {
+  let p = 0;
+  for (const court of cand) {
+    const { format, teamA, teamB } = court;
+    const rA = teamA.reduce((s, id) => s + member(id).rating, 0);
+    const rB = teamB.reduce((s, id) => s + member(id).rating, 0);
+
+    // 1) 過去のペア被り（最重要・重いペナルティ）
+    if (format === "doubles") {
+      p += 250 * (Math.pow(togetherCount(teamA[0], teamA[1]), 1.5)
+                + Math.pow(togetherCount(teamB[0], teamB[1]), 1.5));
+    }
+    // 対戦相手の被りは軽めに回避
+    for (const a of teamA) for (const b of teamB) p += 40 * vsCount(a, b);
+
+    // 2) チーム間のパワーバランス（合計レーティング差）
+    p += Math.abs(rA - rB);
+
+    // 3) MIX戦: ダブルスはペア内レート差が大きいほど、シングルスは実力差マッチほど選ばれやすく
+    if (mix && format === "doubles") {
+      const gapA = Math.abs(member(teamA[0]).rating - member(teamA[1]).rating);
+      const gapB = Math.abs(member(teamB[0]).rating - member(teamB[1]).rating);
+      p -= 0.8 * (gapA + gapB);
+    }
+    if (mix && format === "singles") {
+      p -= 1.4 * Math.abs(rA - rB);
+    }
+  }
+  return p;
+}
+
+function renderMatches() {
+  const card = document.getElementById("matches-card");
+  const area = document.getElementById("matches-area");
+  const badge = document.getElementById("mix-badge");
+  card.style.display = "block";
+  badge.innerHTML = currentMatches.mix
+    ? `<span class="badge" style="background:#f06595">🎲 MIX戦（ハンデ戦回）</span>`
+    : `<span class="badge" style="background:#f06595">⚖️ バランス戦</span>`;
+
+  const teamHtml = (ids) => ids.map(id => {
+    const m = member(id);
+    return `<div>${esc(m.name)} <small class="text-muted">(R${m.rating})</small></div>`;
+  }).join("");
+
+  area.innerHTML = currentMatches.courts.map((c, i) => {
+    const rA = c.teamA.reduce((s, id) => s + member(id).rating, 0);
+    const rB = c.teamB.reduce((s, id) => s + member(id).rating, 0);
+    const fmtBadge = c.format === "doubles"
+      ? `<span class="badge fmt-badge fmt-doubles">ダブルス</span>`
+      : `<span class="badge fmt-badge fmt-singles">シングルス</span>`;
+    return `
+    <div class="card court-card mb-3">
+      <div class="card-body py-2">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="court-title">コート ${i + 1} ${fmtBadge}</span>
+          <small class="text-muted">合計R: ${rA} vs ${rB}（差${Math.abs(rA - rB)}）</small>
+        </div>
+        <div class="row g-2 align-items-center">
+          <div class="col-5"><div class="team-box">${teamHtml(c.teamA)}</div></div>
+          <div class="col-2 text-center vs-label">VS</div>
+          <div class="col-5"><div class="team-box">${teamHtml(c.teamB)}</div></div>
+        </div>
+        <div class="d-flex gap-2 align-items-center justify-content-center mt-2">
+          <input type="number" class="form-control score-input" id="score-a-${i}" placeholder="21" min="0" max="99" ${c.saved ? "disabled" : ""}>
+          <span>−</span>
+          <input type="number" class="form-control score-input" id="score-b-${i}" placeholder="15" min="0" max="99" ${c.saved ? "disabled" : ""}>
+          <button class="btn btn-sm btn-main" onclick="saveResult(${i})" ${c.saved ? "disabled" : ""}>
+            ${c.saved ? "保存済み" : "結果保存"}</button>
+        </div>
+        <div class="text-center small mt-1" id="result-msg-${i}"></div>
+      </div>
+    </div>`;
+  }).join("") + (currentMatches.resting.length ? `
+    <div class="rest-box">☕ <b>休憩:</b> ${currentMatches.resting.map(id => esc(member(id).name)).join("、")}
+    <br><small class="text-muted">※次回生成時に優先して出場します</small></div>` : "");
+}
+
+// ================= レーティング更新（簡易イロ） =================
+function saveResult(i) {
+  const c = currentMatches.courts[i];
+  if (c.saved) return;
+  const sa = +document.getElementById(`score-a-${i}`).value;
+  const sb = +document.getElementById(`score-b-${i}`).value;
+  if (isNaN(sa) || isNaN(sb) || (sa === 0 && sb === 0) || sa === sb) {
+    alert("点数を正しく入力してください（同点は保存できません）"); return;
+  }
+
+  const rA = c.teamA.reduce((s, id) => s + member(id).rating, 0) / c.teamA.length;
+  const rB = c.teamB.reduce((s, id) => s + member(id).rating, 0) / c.teamB.length;
+  const expectedA = 1 / (1 + Math.pow(10, (rB - rA) / 400));
+  const scoreA = sa > sb ? 1 : 0;
+  // 得失点差で変動幅を増減（21点ゲーム基準）
+  const margin = 1 + Math.abs(sa - sb) / Math.max(21, Math.max(sa, sb));
+  const K = 32;
+  const delta = Math.round(K * margin * (scoreA - expectedA));
+
+  const winners = sa > sb ? c.teamA : c.teamB;
+  for (const id of c.teamA) { const m = member(id); m.rating = Math.max(100, m.rating + delta); m.games++; }
+  for (const id of c.teamB) { const m = member(id); m.rating = Math.max(100, m.rating - delta); m.games++; }
+  for (const id of winners) member(id).wins++;
+
+  // ペア・対戦履歴を記録
+  if (c.format === "doubles") {
+    bump(state.togetherCounts, pairKey(c.teamA[0], c.teamA[1]));
+    bump(state.togetherCounts, pairKey(c.teamB[0], c.teamB[1]));
+  }
+  for (const a of c.teamA) for (const b of c.teamB) bump(state.vsCounts, pairKey(a, b));
+  for (const id of [...c.teamA, ...c.teamB]) session.playCount[id] = (session.playCount[id] || 0) + 1;
+
+  c.saved = true;
+  save(); renderMembers(); renderMatches();
+  const sign = delta >= 0 ? "+" : "";
+  document.getElementById(`result-msg-${i}`).innerHTML =
+    `保存しました。レーティング変動: チームA <span class="${delta >= 0 ? "delta-up" : "delta-down"}">${sign}${delta}</span> ／ チームB <span class="${-delta >= 0 ? "delta-up" : "delta-down"}">${delta > 0 ? "-" : "+"}${Math.abs(delta)}</span>`;
+}
+
+function bump(obj, key) { obj[key] = (obj[key] || 0) + 1; }
+
+// ================= データ管理エリアの開閉 =================
+function toggleData() {
+  const body = document.getElementById("data-body");
+  const open = body.style.display === "none";
+  body.style.display = open ? "block" : "none";
+  document.getElementById("data-arrow").textContent = open ? "▾" : "▸";
+}
+
+// ================= JSONテキストでの移行（コピー＆ペースト） =================
+function showJSON() {
+  document.getElementById("json-io").value = JSON.stringify(state);
+}
+
+function copyJSON() {
+  const ta = document.getElementById("json-io");
+  if (!ta.value) showJSON();
+  ta.select();
+  navigator.clipboard.writeText(ta.value)
+    .then(() => alert("コピーしました。LINEなどで他のメンバーに送れます。"))
+    .catch(() => alert("コピーに失敗しました。テキストを長押しで全選択してコピーしてください。"));
+}
+
+function loadJSONText() {
+  const text = document.getElementById("json-io").value.trim();
+  if (!text) { alert("テキスト欄にデータを貼り付けてから押してください"); return; }
+  applyImportedData(text);
+}
+
+// ================= ファイルでのエクスポート / インポート =================
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `badminton-data-${today()}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importJSON(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { applyImportedData(reader.result); input.value = ""; };
+  reader.readAsText(file);
+}
+
+function applyImportedData(text) {
+  try {
+    const data = JSON.parse(text);
+    if (!Array.isArray(data.members)) throw new Error("メンバーデータが見つかりません");
+    if (!confirm(`メンバー${data.members.length}人のデータを読み込みます。この端末の現在のデータは上書きされます。よろしいですか？`)) return;
+    state = Object.assign({ togetherCounts: {}, vsCounts: {}, nextId: 1 }, data);
+    state.members.forEach(m => {
+      if (m.attendCount === undefined) m.attendCount = 0;
+      if (m.lastAttend === undefined) m.lastAttend = "";
+    });
+    save(); renderMembers();
+    alert("読み込みました！");
+  } catch (e) { alert("読み込みに失敗しました: " + e.message); }
+}
+
+function resetAll() {
+  if (!confirm("メンバー・レーティング・履歴をすべて削除します。よろしいですか？")) return;
+  localStorage.removeItem(STORAGE_KEY);
+  location.reload();
+}
+
+// ================= 初期化 =================
+document.getElementById("new-name").addEventListener("keydown", e => {
+  if (e.key === "Enter") addMember();
+});
+load();
+renderMembers();
+renderFormatRows();
+</script>
+</body>
+</html>
