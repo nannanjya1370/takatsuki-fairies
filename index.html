@@ -248,7 +248,7 @@
 
   <!-- 対戦表 -->
   <div class="card" id="matches-card" style="display:none">
-    <div class="card-header">今回の対戦 <span id="mix-badge"></span> <small class="opacity-75">（全員のスマホで見られます）</small></div>
+    <div class="card-header">今回の対戦 <span id="mix-badge"></span> <small class="opacity-75">（全員のスマホで見られます）</small><button class="btn btn-sm btn-outline-pk py-0 float-end" style="font-size:.72rem" onclick="resetMatches()">🔄 リセット</button></div>
     <div class="card-body" id="matches-area"></div>
   </div>
 
@@ -942,6 +942,14 @@ function saveResult(i) {
 }
 
 function bump(obj, key) { obj[key] = (obj[key] || 0) + 1; }
+// 今回の対戦をやり直す：対戦表を破棄して全端末から消す（保存済みのレート・ポイントは残す）
+function resetMatches() {
+  if (!state.currentMatches) return;
+  if (!confirm("今回の対戦をリセットしますか？（保存前の点数入力は消えます。保存済みのレーティング・ポイントはそのまま残ります）")) return;
+  state.currentMatches = null;
+  document.getElementById("matches-card").style.display = "none";
+  save(); pushState();
+}
 
 // ================= データ管理エリアの開閉 =================
 function toggleData() {
