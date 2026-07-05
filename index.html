@@ -327,9 +327,9 @@
 const STORAGE_KEY = "badminton-pairing-v1";
 const INITIAL_RATING = 1000;
 // 勝敗ポイント: 勝ち/負けの試合結果で加算。参加ポイントは勝ちポイントの2倍（1日1回のみ）
-const WIN_POINTS = 200;
-const LOSE_POINTS = 100;
-const ATTEND_POINTS = WIN_POINTS * 2;
+const WIN_POINTS = 100;
+const LOSE_POINTS = -50;
+const ATTEND_POINTS = 200;
 const DIFF_POINTS = 10;   // 得失点差1点あたりの妖精ポイント（勝者に上乗せ）
 const RANKS = [
   { min: 30, name: "ダイヤモンド", cls: "rank-diamond", icon: "💎" },
@@ -355,7 +355,8 @@ let state = {
   attendVotes: {},    // "YYYY-MM-DD" -> { memberId: "yes"|"no" }
   voterId: null,      // この端末で投票する人
   pointsV2: false,    // 100pt単位換算済みフラグ。保存データに無ければload()で換算してtrueにする
-  pointsV3: false,    // 妖精ポイントを履歴から再計算済みフラグ
+  pointsV3: false,    // （旧）妖精ポイント再計算フラグ
+  pointsV4: false,    // 妖精ポイントを新レート（勝+100/負-50/参加+200）で再計算済みフラグ
   nextId: 1,
 };
 let openSched = new Set(); // 回答一覧を開いている日程のindex
@@ -372,7 +373,7 @@ function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function normalizeLoadedState(s) {
   s = Object.assign({
     members: [], togetherCounts: {}, vsCounts: {},
-    attendVotes: {}, voterId: null, pointsV2: false, pointsV3: false, nextId: 1,
+    attendVotes: {}, voterId: null, pointsV2: false, pointsV3: false, pointsV4: false, nextId: 1,
     currentMatches: null,
   }, s);
   s.members.forEach(m => {
@@ -387,12 +388,12 @@ function normalizeLoadedState(s) {
   }
   // 妖精ポイントを履歴（参加回数・勝敗回数）から一度だけ再計算してそろえる
   // 過去分の得失点差は各試合の得点が未保存のため含められない（得失点差は今後の試合から加算される）
-  if (!s.pointsV3) {
+  if (!s.pointsV4) {
     s.members.forEach(m => {
       const losses = Math.max(0, (m.games || 0) - (m.wins || 0));
       m.points = (m.attendCount || 0) * ATTEND_POINTS + (m.wins || 0) * WIN_POINTS + losses * LOSE_POINTS;
     });
-    s.pointsV3 = true;
+    s.pointsV4 = true;
   }
   // 同名メンバーの重複を統合（改名や同期の行き違いで生じた二重登録を自己修復）。履歴の多い1件だけ残す
   const _activity = m => (m.games || 0) + (m.attendCount || 0) + (m.points || 0);
@@ -709,7 +710,7 @@ function renderSchedule() {
 function renderRanking() {
   // ランキングはPC用（右カラム）とスマホ用（メイン内）の2か所に描画する
   document.querySelectorAll(".ranking-legend").forEach(el => el.innerHTML =
-    `勝ち +${WIN_POINTS}pt（＋得失点差×${DIFF_POINTS}）／ 負け +${LOSE_POINTS}pt ／ 参加 +${ATTEND_POINTS}pt（1日1回）。同ポイントはレート順（イロ方式）。`);
+    `勝ち +${WIN_POINTS}pt（＋得失点差×${DIFF_POINTS}）／ 負け ${LOSE_POINTS}pt ／ 参加 +${ATTEND_POINTS}pt（1日1回）。同ポイントはレート順（イロ方式）。`);
   let html;
   if (state.members.length === 0) {
     html = `<p class="text-muted small mb-0">メンバーを追加するとランキングが表示されます</p>`;
@@ -897,11 +898,13 @@ function renderMatches() {
           <div class="col-5"><div class="team-box">${teamHtml(c.teamB)}</div></div>
         </div>
         <div class="d-flex gap-2 align-items-center justify-content-center mt-2">
-          <input type="number" class="form-control score-input" id="score-a-${i}" min="0" max="99" ${c.saved ? "disabled" : ""}>
+          <input type="number" class="form-control score-input" id="score-a-${i}" min="0" max="99" value="${c.result ? c.result.sa : ""}" ${c.saved ? "disabled" : ""}>
           <span>−</span>
-          <input type="number" class="form-control score-input" id="score-b-${i}" min="0" max="99" ${c.saved ? "disabled" : ""}>
-          <button class="btn btn-sm btn-main" onclick="saveResult(${i})" ${c.saved ? "disabled" : ""}>
-            ${c.saved ? "保存済み" : "結果保存"}</button>
+          <input type="number" class="form-control score-input" id="score-b-${i}" min="0" max="99" value="${c.result ? c.result.sb : ""}" ${c.saved ? "disabled" : ""}>
+          ${c.saved
+            ? `<button class="btn btn-sm btn-outline-secondary" disabled>保存済み</button>
+               <button class="btn btn-sm btn-outline-pk" onclick="editResult(${i})">✎ 修正</button>`
+            : `<button class="btn btn-sm btn-main" onclick="saveResult(${i})">結果保存</button>`}
         </div>
         <div class="text-center small mt-1" id="result-msg-${i}"></div>
       </div>
@@ -945,6 +948,7 @@ function saveResult(i) {
   for (const a of c.teamA) for (const b of c.teamB) bump(state.vsCounts, pairKey(a, b));
   for (const id of [...c.teamA, ...c.teamB]) session.playCount[id] = (session.playCount[id] || 0) + 1;
 
+  c.result = { sa, sb, delta, winBonus, winnerIsA: sa > sb }; // 修正時に巻き戻すため適用内容を保持
   c.saved = true;
   save(); renderMembers(); renderMatches(); pushState();
   const sign = delta >= 0 ? "+" : "";
@@ -953,6 +957,33 @@ function saveResult(i) {
 }
 
 function bump(obj, key) { obj[key] = (obj[key] || 0) + 1; }
+function unbump(obj, key) { if (obj[key]) obj[key] = Math.max(0, obj[key] - 1); }
+
+// 保存済みの結果を取り消して入力し直せるようにする（点数の打ち間違い修正用）
+// 保存時に適用したレート変動・ポイント・各種カウントを c.result を使って正確に巻き戻す
+function editResult(i) {
+  const c = state.currentMatches.courts[i];
+  if (!c.saved || !c.result) return;
+  if (!confirm("この試合の結果を修正しますか？（レート・ポイントを一度取り消して入力し直せます）")) return;
+  const r = c.result;
+  const winners = r.winnerIsA ? c.teamA : c.teamB;
+  const losers = r.winnerIsA ? c.teamB : c.teamA;
+  // レート・試合数を巻き戻す
+  for (const id of c.teamA) { const m = member(id); if (m) { m.rating = Math.max(100, m.rating - r.delta); m.games = Math.max(0, m.games - 1); } }
+  for (const id of c.teamB) { const m = member(id); if (m) { m.rating = m.rating + r.delta; m.games = Math.max(0, m.games - 1); } }
+  // 勝敗・ポイントを巻き戻す
+  for (const id of winners) { const m = member(id); if (m) { m.wins = Math.max(0, m.wins - 1); m.points = (m.points || 0) - WIN_POINTS - r.winBonus; } }
+  for (const id of losers) { const m = member(id); if (m) { m.points = (m.points || 0) - LOSE_POINTS; } }
+  // ペア・対戦・出場カウントを巻き戻す
+  if (c.format === "doubles") {
+    unbump(state.togetherCounts, pairKey(c.teamA[0], c.teamA[1]));
+    unbump(state.togetherCounts, pairKey(c.teamB[0], c.teamB[1]));
+  }
+  for (const a of c.teamA) for (const b of c.teamB) unbump(state.vsCounts, pairKey(a, b));
+  for (const id of [...c.teamA, ...c.teamB]) unbump(session.playCount, id);
+  c.saved = false; // c.result は入力欄の再表示用に残す（再保存時に上書きされる）
+  save(); renderMembers(); renderMatches(); pushState();
+}
 // 今回の対戦をやり直す：対戦表を破棄して全端末から消す（保存済みのレート・ポイントは残す）
 function resetMatches() {
   if (!state.currentMatches) return;
