@@ -330,6 +330,7 @@ const INITIAL_RATING = 1000;
 const WIN_POINTS = 200;
 const LOSE_POINTS = 100;
 const ATTEND_POINTS = WIN_POINTS * 2;
+const DIFF_POINTS = 10;   // 得失点差1点あたりの妖精ポイント（勝者に上乗せ）
 const RANKS = [
   { min: 30, name: "ダイヤモンド", cls: "rank-diamond", icon: "💎" },
   { min: 15, name: "ゴールド",     cls: "rank-gold", icon: "🥇" },
@@ -354,6 +355,7 @@ let state = {
   attendVotes: {},    // "YYYY-MM-DD" -> { memberId: "yes"|"no" }
   voterId: null,      // この端末で投票する人
   pointsV2: false,    // 100pt単位換算済みフラグ。保存データに無ければload()で換算してtrueにする
+  pointsV3: false,    // 妖精ポイントを履歴から再計算済みフラグ
   nextId: 1,
 };
 let openSched = new Set(); // 回答一覧を開いている日程のindex
@@ -370,7 +372,7 @@ function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function normalizeLoadedState(s) {
   s = Object.assign({
     members: [], togetherCounts: {}, vsCounts: {},
-    attendVotes: {}, voterId: null, pointsV2: false, nextId: 1,
+    attendVotes: {}, voterId: null, pointsV2: false, pointsV3: false, nextId: 1,
     currentMatches: null,
   }, s);
   s.members.forEach(m => {
@@ -382,6 +384,15 @@ function normalizeLoadedState(s) {
   if (!s.pointsV2) {
     s.members.forEach(m => m.points = (m.points || 0) * 100);
     s.pointsV2 = true;
+  }
+  // 妖精ポイントを履歴（参加回数・勝敗回数）から一度だけ再計算してそろえる
+  // 過去分の得失点差は各試合の得点が未保存のため含められない（得失点差は今後の試合から加算される）
+  if (!s.pointsV3) {
+    s.members.forEach(m => {
+      const losses = Math.max(0, (m.games || 0) - (m.wins || 0));
+      m.points = (m.attendCount || 0) * ATTEND_POINTS + (m.wins || 0) * WIN_POINTS + losses * LOSE_POINTS;
+    });
+    s.pointsV3 = true;
   }
   // 同名メンバーの重複を統合（改名や同期の行き違いで生じた二重登録を自己修復）。履歴の多い1件だけ残す
   const _activity = m => (m.games || 0) + (m.attendCount || 0) + (m.points || 0);
@@ -698,8 +709,7 @@ function renderSchedule() {
 function renderRanking() {
   // ランキングはPC用（右カラム）とスマホ用（メイン内）の2か所に描画する
   document.querySelectorAll(".ranking-legend").forEach(el => el.innerHTML =
-    `勝ち +${WIN_POINTS}pt ／ 負け +${LOSE_POINTS}pt ／ 参加 +${ATTEND_POINTS}pt（1日1回）<br>` +
-    `同ポイントはレート順。<br><b>レートの計算（イロ方式）</b>：全員${INITIAL_RATING}からスタート。まず相手とのレート差から期待勝率＝1÷(1+10^((相手−自分)÷400))を求め、勝ち=1・負け=0として、変動＝32×(結果−期待勝率)を四捨五入して加算します。勝者は＋・敗者は同じ幅を−（1試合で最大±32）。格上に勝つほど大きくアップし、格下への順当勝ちは小幅。点差は影響せず勝敗のみで変動します。ダブルスはチームの平均レートで計算し、4人全員へ同じ変動を適用します。`);
+    `勝ち +${WIN_POINTS}pt（＋得失点差×${DIFF_POINTS}）／ 負け +${LOSE_POINTS}pt ／ 参加 +${ATTEND_POINTS}pt（1日1回）。同ポイントはレート順（イロ方式）。`);
   let html;
   if (state.members.length === 0) {
     html = `<p class="text-muted small mb-0">メンバーを追加するとランキングが表示されます</p>`;
@@ -923,7 +933,8 @@ function saveResult(i) {
   const losers = sa > sb ? c.teamB : c.teamA;
   for (const id of c.teamA) { const m = member(id); m.rating = Math.max(100, m.rating + delta); m.games++; }
   for (const id of c.teamB) { const m = member(id); m.rating = Math.max(100, m.rating - delta); m.games++; }
-  for (const id of winners) { const m = member(id); m.wins++; m.points = (m.points || 0) + WIN_POINTS; }
+  const winBonus = Math.abs(sa - sb) * DIFF_POINTS; // 得失点差ボーナス（勝者に上乗せ）
+  for (const id of winners) { const m = member(id); m.wins++; m.points = (m.points || 0) + WIN_POINTS + winBonus; }
   for (const id of losers) { const m = member(id); m.points = (m.points || 0) + LOSE_POINTS; }
 
   // ペア・対戦履歴を記録
@@ -938,7 +949,7 @@ function saveResult(i) {
   save(); renderMembers(); renderMatches(); pushState();
   const sign = delta >= 0 ? "+" : "";
   document.getElementById(`result-msg-${i}`).innerHTML =
-    `保存しました。レーティング変動: チームA <span class="${delta >= 0 ? "delta-up" : "delta-down"}">${sign}${delta}</span> ／ チームB <span class="${-delta >= 0 ? "delta-up" : "delta-down"}">${delta > 0 ? "-" : "+"}${Math.abs(delta)}</span>`;
+    `保存しました。レーティング変動: チームA <span class="${delta >= 0 ? "delta-up" : "delta-down"}">${sign}${delta}</span> ／ チームB <span class="${-delta >= 0 ? "delta-up" : "delta-down"}">${delta > 0 ? "-" : "+"}${Math.abs(delta)}</span>${winBonus ? ` ／ 勝者に得失点差ボーナス +${winBonus}pt` : ""}`;
 }
 
 function bump(obj, key) { obj[key] = (obj[key] || 0) + 1; }
