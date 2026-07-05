@@ -284,8 +284,8 @@
 const STORAGE_KEY = "badminton-pairing-v1";
 const INITIAL_RATING = 1000;
 // 勝敗ポイント: 勝ち/負けの試合結果で加算。参加ポイントは勝ちポイントの2倍（1日1回のみ）
-const WIN_POINTS = 2;
-const LOSE_POINTS = 1;
+const WIN_POINTS = 200;
+const LOSE_POINTS = 100;
 const ATTEND_POINTS = WIN_POINTS * 2;
 const RANKS = [
   { min: 30, name: "ダイヤモンド", cls: "rank-diamond", icon: "💎" },
@@ -310,6 +310,7 @@ let state = {
   vsCounts: {},       // "idA|idB" -> 対戦した回数
   attendVotes: {},    // "YYYY-MM-DD" -> { memberId: "yes"|"no" }
   voterId: null,      // この端末で投票する人
+  pointsV2: false,    // 100pt単位換算済みフラグ。保存データに無ければload()で換算してtrueにする
   nextId: 1,
 };
 let openSched = new Set(); // 回答一覧を開いている日程のindex
@@ -331,6 +332,11 @@ function load() {
       if (m.lastAttend === undefined) m.lastAttend = "";
       if (m.points === undefined) m.points = 0;
     });
+    // 旧データ（1pt単位）を100pt単位へ換算
+    if (!state.pointsV2) {
+      state.members.forEach(m => m.points = (m.points || 0) * 100);
+      state.pointsV2 = true;
+    }
   } catch (e) { console.warn("load failed", e); }
 }
 function member(id) { return state.members.find(m => m.id === id); }
@@ -898,6 +904,11 @@ function applyImportedData(text) {
       if (m.lastAttend === undefined) m.lastAttend = "";
       if (m.points === undefined) m.points = 0;
     });
+    // 旧データ（1pt単位）を100pt単位へ換算
+    if (!state.pointsV2) {
+      state.members.forEach(m => m.points = (m.points || 0) * 100);
+      state.pointsV2 = true;
+    }
     save(); renderMembers(); syncMembers();
     alert("読み込みました！");
   } catch (e) { alert("読み込みに失敗しました: " + e.message); }
