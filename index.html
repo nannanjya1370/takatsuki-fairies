@@ -172,8 +172,8 @@
 <div class="container-xl" style="max-width: 1200px;">
   <div class="row g-3">
 
-  <!-- 左: 練習日程・出欠投票 ＋ スポンサー広告欄 -->
-  <div class="col-lg-3 order-3 order-lg-1">
+  <!-- 左: 練習日程・出欠投票 ＋ スポンサー広告欄（スポンサーはPCのみ、スマホは最下部に表示） -->
+  <div class="col-lg-3 order-2 order-lg-1">
     <div class="side-sticky">
       <div class="card">
         <div class="card-header">📅 練習日程・出欠投票</div>
@@ -183,7 +183,7 @@
           <div class="small text-muted mt-2" id="sched-note"></div>
         </div>
       </div>
-      <div class="card">
+      <div class="card d-none d-lg-block">
         <div class="card-header">スポンサー</div>
         <div class="card-body">
           <div class="ad-placeholder text-center">
@@ -273,15 +273,15 @@
 
   </div><!-- /中央メイン -->
 
-  <!-- 右: ポイントランキング＋スポンサー広告欄 -->
-  <div class="col-lg-3 order-2 order-lg-3">
+  <!-- 右: ポイントランキング＋スポンサー広告欄（スポンサーはPCのみ、スマホは最下部に表示） -->
+  <div class="col-lg-3 order-3 order-lg-3">
     <div class="side-sticky">
       <div class="card">
         <div class="card-header">🏆 妖精ポイントランキング</div>
         <div class="card-body py-2" id="ranking-list"></div>
         <div class="px-3 pb-2 small text-muted" id="ranking-legend"></div>
       </div>
-      <div class="card">
+      <div class="card d-none d-lg-block">
         <div class="card-header">スポンサー</div>
         <div class="card-body">
           <div class="ad-placeholder text-center">
@@ -289,6 +289,20 @@
             <div class="fw-bold mt-1">広告募集中</div>
             <div class="small mt-2">この枠にスポンサー様の<br>広告を掲載できます</div>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- スマホ専用: スポンサー広告欄（最下部） -->
+  <div class="col-12 d-lg-none order-4">
+    <div class="card">
+      <div class="card-header">スポンサー</div>
+      <div class="card-body">
+        <div class="ad-placeholder text-center">
+          <div style="font-size:1.8rem">📣</div>
+          <div class="fw-bold mt-1">広告募集中</div>
+          <div class="small mt-2">この枠にスポンサー様の広告を掲載できます</div>
         </div>
       </div>
     </div>
