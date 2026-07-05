@@ -411,7 +411,7 @@ function normalizeLoadedState(s) {
     s.pointsV5 = true;
   }
   // 同名メンバーの重複を統合（改名や同期の行き違いで生じた二重登録を自己修復）。履歴の多い1件だけ残す
-  const _activity = m => (m.games || 0) + (m.attendCount || 0) + (m.points || 0);
+  const _activity = m => (m.games || 0) + (m.attendCount || 0);
   const _best = new Map();
   for (const m of s.members) {
     const cur = _best.get(m.name);
@@ -573,7 +573,7 @@ async function fetchVotes() {
     // メンバー・成績・対戦表などの共有データを取り込む（空データで上書きしない）
     if (data.state && Array.isArray(data.state.members) && data.state.members.length) {
       const localMembers = state.members;
-      const activity = m => (m.games || 0) + (m.attendCount || 0) + (m.points || 0); // 履歴の多さ
+      const activity = m => (m.games || 0) + (m.attendCount || 0); // 履歴の多さ
       state = normalizeLoadedState(data.state);
       let changed = 0;
       for (const lm of localMembers) {
