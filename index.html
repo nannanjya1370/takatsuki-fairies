@@ -107,8 +107,32 @@
     letter-spacing: 1px;
   }
   .data-card .small { font-size: .74rem; }
+  .ad-placeholder {
+    border: 2px dashed var(--pk-border);
+    border-radius: 10px;
+    padding: 30px 10px;
+    color: #b08698;
+    background: #fffafc;
+  }
+  .ranking-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 2px; border-bottom: 1px solid #ffeef4; font-size: .9rem;
+  }
+  .ranking-row:last-child { border-bottom: none; }
+  .ranking-pos { min-width: 40px; font-weight: 700; color: var(--pk-deep); font-size: .85rem; }
+  .ranking-name {
+    flex: 1; font-weight: 600; color: #59344a;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .points-badge {
+    background: var(--pk-strong) !important; color: #fff;
+    font-variant-numeric: tabular-nums;
+  }
+  @media (min-width: 992px) {
+    .side-sticky { position: sticky; top: 12px; }
+  }
   @media (max-width: 576px) {
-    .container { padding-left: 10px; padding-right: 10px; }
+    .container, .container-xl { padding-left: 10px; padding-right: 10px; }
     h1 { font-size: 1.35rem; }
   }
 </style>
@@ -122,7 +146,27 @@
   </div>
 </div>
 
-<div class="container" style="max-width: 720px;">
+<div class="container-xl" style="max-width: 1200px;">
+  <div class="row g-3">
+
+  <!-- 左: スポンサー広告欄 -->
+  <div class="col-lg-3 order-3 order-lg-1">
+    <div class="side-sticky">
+      <div class="card">
+        <div class="card-header">スポンサー</div>
+        <div class="card-body">
+          <div class="ad-placeholder text-center">
+            <div style="font-size:1.8rem">📣</div>
+            <div class="fw-bold mt-1">広告募集中</div>
+            <div class="small mt-2">この枠にスポンサー様の<br>広告を掲載できます</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 中央: メイン -->
+  <div class="col-lg-6 order-1 order-lg-2">
 
   <!-- メンバー管理 -->
   <div class="card">
@@ -196,6 +240,20 @@
     </div>
   </div>
 
+  </div><!-- /中央メイン -->
+
+  <!-- 右: ポイントランキング -->
+  <div class="col-lg-3 order-2 order-lg-3">
+    <div class="side-sticky">
+      <div class="card">
+        <div class="card-header">🏆 ポイントランキング</div>
+        <div class="card-body py-2" id="ranking-list"></div>
+        <div class="px-3 pb-2 small text-muted" id="ranking-legend"></div>
+      </div>
+    </div>
+  </div>
+
+  </div><!-- /row -->
 </div>
 
 <script>
@@ -204,6 +262,10 @@
 // ================= データ =================
 const STORAGE_KEY = "badminton-pairing-v1";
 const INITIAL_RATING = 1000;
+// 勝敗ポイント: 勝ち/負けの試合結果で加算。参加ポイントは勝ちポイントの2倍（1日1回のみ）
+const WIN_POINTS = 2;
+const LOSE_POINTS = 1;
+const ATTEND_POINTS = WIN_POINTS * 2;
 const RANKS = [
   { min: 30, name: "ダイヤモンド", cls: "rank-diamond", icon: "💎" },
   { min: 15, name: "ゴールド",     cls: "rank-gold", icon: "🥇" },
@@ -211,7 +273,7 @@ const RANKS = [
 ];
 
 let state = {
-  members: [],        // {id, name, rating, games, wins, attend, attendCount, lastAttend}
+  members: [],        // {id, name, rating, games, wins, attend, attendCount, lastAttend, points}
   togetherCounts: {}, // "idA|idB"(小さい順) -> ペアを組んだ回数
   vsCounts: {},       // "idA|idB" -> 対戦した回数
   nextId: 1,
@@ -229,6 +291,7 @@ function load() {
     state.members.forEach(m => {
       if (m.attendCount === undefined) m.attendCount = 0;
       if (m.lastAttend === undefined) m.lastAttend = "";
+      if (m.points === undefined) m.points = 0;
     });
   } catch (e) { console.warn("load failed", e); }
 }
@@ -248,7 +311,7 @@ function addMember() {
   if (state.members.some(m => m.name === name)) { alert("同じ名前のメンバーがいます"); return; }
   state.members.push({
     id: state.nextId++, name, rating: INITIAL_RATING,
-    games: 0, wins: 0, attend: true, attendCount: 0, lastAttend: "",
+    games: 0, wins: 0, attend: true, attendCount: 0, lastAttend: "", points: 0,
   });
   input.value = "";
   save(); renderMembers();
@@ -306,6 +369,27 @@ function renderMembers() {
     }).join("");
   }
   document.getElementById("attend-count").textContent = state.members.filter(m => m.attend).length;
+  renderRanking();
+}
+
+// ================= ポイントランキング =================
+function renderRanking() {
+  const wrap = document.getElementById("ranking-list");
+  document.getElementById("ranking-legend").textContent =
+    `勝ち +${WIN_POINTS}pt ／ 負け +${LOSE_POINTS}pt ／ 参加 +${ATTEND_POINTS}pt（1日1回）`;
+  if (state.members.length === 0) {
+    wrap.innerHTML = `<p class="text-muted small mb-0">メンバーを追加するとランキングが表示されます</p>`;
+    return;
+  }
+  const medals = ["🥇", "🥈", "🥉"];
+  const sorted = [...state.members].sort((a, b) =>
+    (b.points || 0) - (a.points || 0) || b.rating - a.rating);
+  wrap.innerHTML = sorted.map((m, i) => `
+    <div class="ranking-row">
+      <span class="ranking-pos">${medals[i] || `${i + 1}位`}</span>
+      <span class="ranking-name">${esc(m.name)}</span>
+      <span class="badge points-badge">${m.points || 0} pt</span>
+    </div>`).join("");
 }
 
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
@@ -365,11 +449,15 @@ function generateMatches() {
     warnEl.innerHTML = `<div class="alert alert-warning py-2 mb-0">⚠️ 参加${attendees.length}人では${wantedFormats.length}面（必要${wantedTotal}人）に足りないため、<b>コート${activeFormats.length}までの${activeFormats.length}面</b>で生成しました。</div>`;
   }
 
-  // 参加回数カウント（同じ日は1回のみ加算）→ 会員ランクに反映
+  // 参加回数カウント＋参加ポイント付与（同じ日は1回のみ）→ 会員ランク・ランキングに反映
   const t = today();
   for (const id of attendees) {
     const m = member(id);
-    if (m.lastAttend !== t) { m.lastAttend = t; m.attendCount = (m.attendCount || 0) + 1; }
+    if (m.lastAttend !== t) {
+      m.lastAttend = t;
+      m.attendCount = (m.attendCount || 0) + 1;
+      m.points = (m.points || 0) + ATTEND_POINTS;
+    }
   }
 
   // 出場回数が少ない人を優先して出場させる（休憩の公平化）
@@ -504,9 +592,11 @@ function saveResult(i) {
   const delta = Math.round(K * margin * (scoreA - expectedA));
 
   const winners = sa > sb ? c.teamA : c.teamB;
+  const losers = sa > sb ? c.teamB : c.teamA;
   for (const id of c.teamA) { const m = member(id); m.rating = Math.max(100, m.rating + delta); m.games++; }
   for (const id of c.teamB) { const m = member(id); m.rating = Math.max(100, m.rating - delta); m.games++; }
-  for (const id of winners) member(id).wins++;
+  for (const id of winners) { const m = member(id); m.wins++; m.points = (m.points || 0) + WIN_POINTS; }
+  for (const id of losers) { const m = member(id); m.points = (m.points || 0) + LOSE_POINTS; }
 
   // ペア・対戦履歴を記録
   if (c.format === "doubles") {
@@ -580,6 +670,7 @@ function applyImportedData(text) {
     state.members.forEach(m => {
       if (m.attendCount === undefined) m.attendCount = 0;
       if (m.lastAttend === undefined) m.lastAttend = "";
+      if (m.points === undefined) m.points = 0;
     });
     save(); renderMembers();
     alert("読み込みました！");
