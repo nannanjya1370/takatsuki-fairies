@@ -201,7 +201,7 @@
 
   <!-- メンバー管理 -->
   <div class="card">
-    <div class="card-header">メンバー管理 <small class="opacity-75">（チェック＝今回の参加者）</small></div>
+    <div class="card-header">メンバー管理 <small class="opacity-75">（チェック＝今回の参加者／全端末で自動共有）</small></div>
     <div class="card-body">
       <div class="input-group mb-3">
         <input type="text" id="new-name" class="form-control" placeholder="名前を入力" maxlength="20">
@@ -212,7 +212,7 @@
         <span class="ms-auto align-self-center small text-muted">参加: <b id="attend-count">0</b>人</span>
       </div>
       <div id="member-list"></div>
-      <div class="rank-legend">ランク：🥈 シルバー（1回〜）／ 🥇 ゴールド（15回〜）／ 💎 ダイヤモンド（30回〜）</div>
+      <div class="rank-legend">会員ランク（参加回数）：🥈 シルバー（1〜14回）／ 🥇 ゴールド（15〜29回）／ 💎 ダイヤモンド（30回〜）<br>R＝レート（イロ方式・勝敗で最大±32変動）</div>
     </div>
   </div>
 
@@ -248,7 +248,7 @@
 
   <!-- 対戦表 -->
   <div class="card" id="matches-card" style="display:none">
-    <div class="card-header">今回の対戦 <span id="mix-badge"></span></div>
+    <div class="card-header">今回の対戦 <span id="mix-badge"></span> <small class="opacity-75">（全員のスマホで見られます）</small></div>
     <div class="card-body" id="matches-area"></div>
   </div>
 
@@ -297,7 +297,7 @@
         <span class="ms-auto" id="data-arrow">▸</span>
       </div>
       <div class="card-body py-2" id="data-body" style="display:none">
-        <div class="small text-muted mb-1">スマホ間の移行はJSONテキストのコピー＆ペーストが簡単です。</div>
+        <div class="small text-muted mb-1">普段のデータ共有は自動なので操作不要です。ここは万一に備えた手動バックアップ・復元用です。</div>
         <div class="d-flex flex-wrap gap-1 mb-1">
           <button class="btn btn-outline-pk btn-sm py-0" onclick="showJSON()">データを表示</button>
           <button class="btn btn-outline-pk btn-sm py-0" onclick="copyJSON()">コピー</button>
@@ -690,7 +690,7 @@ function renderSchedule() {
 function renderRanking() {
   // ランキングはPC用（右カラム）とスマホ用（メイン内）の2か所に描画する
   document.querySelectorAll(".ranking-legend").forEach(el => el.textContent =
-    `勝ち +${WIN_POINTS}pt ／ 負け +${LOSE_POINTS}pt ／ 参加 +${ATTEND_POINTS}pt（1日1回）`);
+    `勝ち +${WIN_POINTS}pt ／ 負け +${LOSE_POINTS}pt ／ 参加 +${ATTEND_POINTS}pt（1日1回）・同ポイントはレート順`);
   let html;
   if (state.members.length === 0) {
     html = `<p class="text-muted small mb-0">メンバーを追加するとランキングが表示されます</p>`;
