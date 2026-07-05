@@ -267,7 +267,7 @@
   <div class="col-lg-3 order-2 order-lg-3">
     <div class="side-sticky">
       <div class="card">
-        <div class="card-header">🏆 ポイントランキング</div>
+        <div class="card-header">🏆 妖精ポイントランキング</div>
         <div class="card-body py-2" id="ranking-list"></div>
         <div class="px-3 pb-2 small text-muted" id="ranking-legend"></div>
       </div>
@@ -605,15 +605,18 @@ function renderRanking() {
     wrap.innerHTML = `<p class="text-muted small mb-0">メンバーを追加するとランキングが表示されます</p>`;
     return;
   }
-  const medals = ["🥇", "🥈", "🥉"];
   const sorted = [...state.members].sort((a, b) =>
     (b.points || 0) - (a.points || 0) || b.rating - a.rating);
-  wrap.innerHTML = sorted.map((m, i) => `
+  wrap.innerHTML = sorted.map((m, i) => {
+    const rank = rankOf(m); // 名前の横のマークは会員ランク（🥈🥇💎）に連動
+    const rankIcon = rank ? ` <span title="${rank.name}">${rank.icon}</span>` : "";
+    return `
     <div class="ranking-row">
-      <span class="ranking-pos">${medals[i] || `${i + 1}位`}</span>
-      <span class="ranking-name">${esc(m.name)}</span>
+      <span class="ranking-pos">${i + 1}位</span>
+      <span class="ranking-name">${esc(m.name)}${rankIcon}</span>
       <span class="badge points-badge">${m.points || 0} pt</span>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
