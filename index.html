@@ -331,6 +331,7 @@ const WIN_POINTS = 100;
 const LOSE_POINTS = -50;
 const ATTEND_POINTS = 200;
 const DIFF_POINTS = 10;   // 得失点差1点あたりの妖精ポイント（勝者に上乗せ）
+const DIFF_BONUS_MAX = 50; // 得失点差ボーナスの上限（大差でも格差が広がりすぎないように）
 const RANKS = [
   { min: 30, name: "ダイヤモンド", cls: "rank-diamond", icon: "💎" },
   { min: 15, name: "ゴールド",     cls: "rank-gold", icon: "🥇" },
@@ -710,7 +711,7 @@ function renderSchedule() {
 function renderRanking() {
   // ランキングはPC用（右カラム）とスマホ用（メイン内）の2か所に描画する
   document.querySelectorAll(".ranking-legend").forEach(el => el.innerHTML =
-    `勝ち +${WIN_POINTS}pt（＋得失点差×${DIFF_POINTS}）／ 負け ${LOSE_POINTS}pt ／ 参加 +${ATTEND_POINTS}pt（1日1回）。同ポイントはレート順（イロ方式）。`);
+    `勝ち +${WIN_POINTS}pt（＋得失点差×${DIFF_POINTS}・上限+${DIFF_BONUS_MAX}）／ 負け ${LOSE_POINTS}pt ／ 参加 +${ATTEND_POINTS}pt（1日1回）。同ポイントはレート順（イロ方式）。`);
   let html;
   if (state.members.length === 0) {
     html = `<p class="text-muted small mb-0">メンバーを追加するとランキングが表示されます</p>`;
@@ -936,7 +937,7 @@ function saveResult(i) {
   const losers = sa > sb ? c.teamB : c.teamA;
   for (const id of c.teamA) { const m = member(id); m.rating = Math.max(100, m.rating + delta); m.games++; }
   for (const id of c.teamB) { const m = member(id); m.rating = Math.max(100, m.rating - delta); m.games++; }
-  const winBonus = Math.abs(sa - sb) * DIFF_POINTS; // 得失点差ボーナス（勝者に上乗せ）
+  const winBonus = Math.min(Math.abs(sa - sb) * DIFF_POINTS, DIFF_BONUS_MAX); // 得失点差ボーナス（勝者に上乗せ・上限あり）
   for (const id of winners) { const m = member(id); m.wins++; m.points = (m.points || 0) + WIN_POINTS + winBonus; }
   for (const id of losers) { const m = member(id); m.points = (m.points || 0) + LOSE_POINTS; }
 
