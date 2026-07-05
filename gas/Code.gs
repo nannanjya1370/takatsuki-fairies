@@ -110,10 +110,11 @@ function doPost(e) {
     var body = JSON.parse(e.postData.contents);
     var ss = getSs_();
 
-    // メンバー名簿の同期（幹事の端末から送られてくる）
+    // メンバー名簿の同期（既存名簿と統合。旧バージョンの端末が名簿を縮めないように）
     if (body.action === "setMembers") {
-      var names = [];
+      var names = readMembers_(ss);
       var seen = {};
+      names.forEach(function (n) { seen[n] = true; });
       (body.members || []).slice(0, 100).forEach(function (raw) {
         var n = String(raw).trim().slice(0, 20);
         if (n && !seen[n]) { seen[n] = true; names.push(n); }

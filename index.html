@@ -520,9 +520,16 @@ async function fetchVotes() {
     applyServerData(data);
     // メンバー・成績・対戦表などの共有データを取り込む（空データで上書きしない）
     if (data.state && Array.isArray(data.state.members) && data.state.members.length) {
+      // この端末だけに登録されているメンバーは、共有データへ名前で合流させる（消さない）
+      const localOnly = state.members.filter(lm =>
+        !data.state.members.some(sm => sm.name === lm.name));
       state = normalizeLoadedState(data.state);
+      for (const lm of localOnly) {
+        state.members.push(Object.assign({}, lm, { id: state.nextId++ }));
+      }
       save(); renderMembers();
       if (state.currentMatches) renderMatches();
+      if (localOnly.length) pushState(); // 合流分を全端末へ共有
     } else if (state.members.length) {
       pushState(); // サーバーが空でこの端末にデータがあれば初回共有
     }
