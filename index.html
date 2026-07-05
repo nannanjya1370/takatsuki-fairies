@@ -336,12 +336,12 @@
 // ================= データ =================
 const STORAGE_KEY = "badminton-pairing-v1";
 const INITIAL_RATING = 1000;
-// 勝敗ポイント: 勝ち/負けの試合結果で加算。参加ポイントは勝ちポイントの2倍（1日1回のみ）
-const WIN_POINTS = 100;
-const LOSE_POINTS = -20;
+// 妖精ポイント: 参加を主役に、勝敗・得失点差は控えめ（差が出にくいよう圧縮）。参加は1日1回のみ
+const WIN_POINTS = 30;
+const LOSE_POINTS = -10;
 const ATTEND_POINTS = 200;
-const DIFF_POINTS = 10;   // 得失点差1点あたりの妖精ポイント（勝者に上乗せ）
-const DIFF_BONUS_MAX = 50; // 得失点差ボーナスの上限（大差でも格差が広がりすぎないように）
+const DIFF_POINTS = 2;   // 得失点差1点あたりの妖精ポイント（勝者に上乗せ）
+const DIFF_BONUS_MAX = 10; // 得失点差ボーナスの上限（大差でも格差が広がりすぎないように）
 const RANKS = [
   { min: 30, name: "ダイヤモンド", cls: "rank-diamond", icon: "💎" },
   { min: 15, name: "ゴールド",     cls: "rank-gold", icon: "🥇" },
