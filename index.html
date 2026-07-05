@@ -520,16 +520,28 @@ async function fetchVotes() {
     applyServerData(data);
     // メンバー・成績・対戦表などの共有データを取り込む（空データで上書きしない）
     if (data.state && Array.isArray(data.state.members) && data.state.members.length) {
-      // この端末だけに登録されているメンバーは、共有データへ名前で合流させる（消さない）
-      const localOnly = state.members.filter(lm =>
-        !data.state.members.some(sm => sm.name === lm.name));
+      const localMembers = state.members;
+      const activity = m => (m.games || 0) + (m.attendCount || 0) + (m.points || 0); // 履歴の多さ
       state = normalizeLoadedState(data.state);
-      for (const lm of localOnly) {
-        state.members.push(Object.assign({}, lm, { id: state.nextId++ }));
+      let changed = 0;
+      for (const lm of localMembers) {
+        const sm = state.members.find(x => x.name === lm.name);
+        if (!sm) {
+          // この端末だけに登録されているメンバーは名前で合流させる（消さない）
+          state.members.push(Object.assign({}, lm, { id: state.nextId++ }));
+          changed++;
+        } else if (activity(lm) > activity(sm)) {
+          // 同名メンバーは履歴の多い方の成績を採用（成績ゼロの重複が本物を上書きしないように）
+          Object.assign(sm, {
+            rating: lm.rating, games: lm.games, wins: lm.wins,
+            attendCount: lm.attendCount, lastAttend: lm.lastAttend, points: lm.points,
+          });
+          changed++;
+        }
       }
       save(); renderMembers();
       if (state.currentMatches) renderMatches();
-      if (localOnly.length) pushState(); // 合流分を全端末へ共有
+      if (changed) pushState(); // 合流・修復分を全端末へ共有
     } else if (state.members.length) {
       pushState(); // サーバーが空でこの端末にデータがあれば初回共有
     }
