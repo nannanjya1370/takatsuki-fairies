@@ -252,6 +252,19 @@
     <div class="card-body" id="matches-area"></div>
   </div>
 
+  <!-- 結果を手動で記録（自動生成の対戦表を使わず、任意の組み合わせの結果を反映） -->
+  <div class="card">
+    <div class="card-header">✍️ 結果を手動で記録</div>
+    <div class="card-body">
+      <div class="form-check form-check-inline mb-2">
+        <input class="form-check-input" type="checkbox" id="manual-singles" onchange="renderManualEntry()">
+        <label class="form-check-label small" for="manual-singles">シングルス（1対1）</label>
+      </div>
+      <div id="manual-entry-body"></div>
+      <div class="small text-muted mt-2">得失点差も記録され、ランキングに反映されます。打ち間違えたら再度正しい結果を記録し、必要なら不要なメンバーは触らずやり直せます。</div>
+    </div>
+  </div>
+
   </div><!-- /中央メイン -->
 
   <!-- 右: ポイントランキング＋スポンサー広告欄（スポンサーはPCのみ、スマホは最下部に表示） -->
@@ -359,6 +372,8 @@ let state = {
   pointsV3: false,    // （旧）妖精ポイント再計算フラグ
   pointsV4: false,    // （旧）
   pointsV5: false,    // 妖精ポイントを現行値（勝+100/負-20/参加+200）で再計算済みフラグ
+  matchLog: [],       // 試合ログ {id,date,format,teamA:[名前],teamB:[名前],sa,sb} 得失点差の把握用
+  matchLogSeq: 0,     // 試合ログのID採番
   nextId: 1,
 };
 let openSched = new Set(); // 回答一覧を開いている日程のindex
@@ -375,7 +390,8 @@ function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function normalizeLoadedState(s) {
   s = Object.assign({
     members: [], togetherCounts: {}, vsCounts: {},
-    attendVotes: {}, voterId: null, pointsV2: false, pointsV3: false, pointsV4: false, pointsV5: false, nextId: 1,
+    attendVotes: {}, voterId: null, pointsV2: false, pointsV3: false, pointsV4: false, pointsV5: false,
+    matchLog: [], matchLogSeq: 0, nextId: 1,
     currentMatches: null,
   }, s);
   s.members.forEach(m => {
@@ -516,6 +532,7 @@ function renderMembers() {
   document.getElementById("attend-count").textContent = state.members.filter(m => m.attend).length;
   renderRanking();
   renderSchedule();
+  renderManualEntry();
 }
 
 // ================= 練習日程・出欠投票 =================
@@ -916,6 +933,85 @@ function renderMatches() {
     <br><small class="text-muted">※次回生成時に優先して出場します</small></div>` : "");
 }
 
+// 手動記録フォームを描画（メンバーのプルダウン＋点数）
+function renderManualEntry() {
+  const body = document.getElementById("manual-entry-body");
+  if (!body) return;
+  const singlesEl = document.getElementById("manual-singles");
+  const singles = singlesEl && singlesEl.checked;
+  const opts = state.members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join("");
+  const sel = (id) => `<select id="${id}" class="form-select form-select-sm mb-1"><option value="">選手…</option>${opts}</select>`;
+  body.innerHTML = `
+    <div class="row g-2 align-items-center">
+      <div class="col-5">${sel("mA1")}${singles ? "" : sel("mA2")}</div>
+      <div class="col-2 text-center vs-label">VS</div>
+      <div class="col-5">${sel("mB1")}${singles ? "" : sel("mB2")}</div>
+    </div>
+    <div class="d-flex gap-2 align-items-center justify-content-center mt-2">
+      <input type="number" id="mSA" class="form-control score-input" min="0" max="99">
+      <span>−</span>
+      <input type="number" id="mSB" class="form-control score-input" min="0" max="99">
+      <button class="btn btn-sm btn-main" onclick="applyManualMatch()">記録する</button>
+    </div>
+    <div class="text-center small mt-1" id="manual-msg"></div>`;
+}
+
+// 手動記録フォームの入力を検証して1試合を反映
+function applyManualMatch() {
+  const gv = id => { const el = document.getElementById(id); return el ? el.value : ""; };
+  const singlesEl = document.getElementById("manual-singles");
+  const singles = singlesEl && singlesEl.checked;
+  const need = singles ? 1 : 2;
+  const msg = document.getElementById("manual-msg");
+  const teamA = [gv("mA1")].concat(singles ? [] : [gv("mA2")]).filter(Boolean).map(Number);
+  const teamB = [gv("mB1")].concat(singles ? [] : [gv("mB2")]).filter(Boolean).map(Number);
+  if (teamA.length !== need || teamB.length !== need) { if (msg) msg.textContent = "選手を全員選んでください"; return; }
+  const all = [...teamA, ...teamB];
+  if (new Set(all).size !== all.length) { if (msg) msg.textContent = "同じ選手が重複しています"; return; }
+  const sa = +gv("mSA"), sb = +gv("mSB");
+  if (isNaN(sa) || isNaN(sb) || (sa === 0 && sb === 0) || sa === sb) { if (msg) msg.textContent = "点数を正しく入力してください（同点は不可）"; return; }
+  const winnerIds = sa > sb ? teamA : teamB;
+  const winnerNames = winnerIds.map(id => member(id).name).join("・");
+  const { delta, winBonus } = applyMatch(teamA, teamB, sa, sb, singles ? "singles" : "doubles");
+  save(); renderMembers(); renderManualEntry(); pushState();
+  const m2 = document.getElementById("manual-msg");
+  if (m2) m2.innerHTML = `記録しました：<b>${esc(winnerNames)}</b> の勝ち（レート±${Math.abs(delta)}${winBonus ? `、得失点差ボーナス +${winBonus}pt` : ""}）`;
+}
+
+// 1試合分の結果を反映する共通処理（レート・ポイント・対戦カウント・試合ログ）
+// teamA/teamB はメンバーIDの配列。得失点差ボーナスは勝者に上乗せ（上限あり）
+function applyMatch(teamA, teamB, sa, sb, format) {
+  // 参加ポイント（同じ日は1回のみ・生成フローと二重にならないよう lastAttend でガード）
+  const _t = today();
+  for (const id of [...teamA, ...teamB]) {
+    const m = member(id);
+    if (m && m.lastAttend !== _t) { m.lastAttend = _t; m.attendCount = (m.attendCount || 0) + 1; m.points = (m.points || 0) + ATTEND_POINTS; }
+  }
+  const rA = teamA.reduce((s, id) => s + member(id).rating, 0) / teamA.length;
+  const rB = teamB.reduce((s, id) => s + member(id).rating, 0) / teamB.length;
+  const expectedA = 1 / (1 + Math.pow(10, (rB - rA) / 400));
+  const K = 32;
+  const delta = Math.round(K * ((sa > sb ? 1 : 0) - expectedA));
+  const winners = sa > sb ? teamA : teamB;
+  const losers = sa > sb ? teamB : teamA;
+  for (const id of teamA) { const m = member(id); m.rating = Math.max(100, m.rating + delta); m.games++; }
+  for (const id of teamB) { const m = member(id); m.rating = Math.max(100, m.rating - delta); m.games++; }
+  const winBonus = Math.min(Math.abs(sa - sb) * DIFF_POINTS, DIFF_BONUS_MAX);
+  for (const id of winners) { const m = member(id); m.wins++; m.points = (m.points || 0) + WIN_POINTS + winBonus; }
+  for (const id of losers) { const m = member(id); m.points = (m.points || 0) + LOSE_POINTS; }
+  if (format === "doubles") {
+    bump(state.togetherCounts, pairKey(teamA[0], teamA[1]));
+    bump(state.togetherCounts, pairKey(teamB[0], teamB[1]));
+  }
+  for (const a of teamA) for (const b of teamB) bump(state.vsCounts, pairKey(a, b));
+  for (const id of [...teamA, ...teamB]) session.playCount[id] = (session.playCount[id] || 0) + 1;
+  const logId = state.matchLogSeq = (state.matchLogSeq || 0) + 1;
+  if (!Array.isArray(state.matchLog)) state.matchLog = [];
+  state.matchLog.push({ id: logId, date: today(), format,
+    teamA: teamA.map(id => member(id).name), teamB: teamB.map(id => member(id).name), sa, sb });
+  return { delta, winBonus, logId };
+}
+
 // ================= レーティング更新（簡易イロ） =================
 function saveResult(i) {
   const c = state.currentMatches.courts[i];
@@ -926,31 +1022,8 @@ function saveResult(i) {
     alert("点数を正しく入力してください（同点は保存できません）"); return;
   }
 
-  // イロレーティング: チーム平均レートで期待勝率を計算し、K=32で変動（点差は影響しない）
-  const rA = c.teamA.reduce((s, id) => s + member(id).rating, 0) / c.teamA.length;
-  const rB = c.teamB.reduce((s, id) => s + member(id).rating, 0) / c.teamB.length;
-  const expectedA = 1 / (1 + Math.pow(10, (rB - rA) / 400));
-  const scoreA = sa > sb ? 1 : 0;
-  const K = 32;
-  const delta = Math.round(K * (scoreA - expectedA));
-
-  const winners = sa > sb ? c.teamA : c.teamB;
-  const losers = sa > sb ? c.teamB : c.teamA;
-  for (const id of c.teamA) { const m = member(id); m.rating = Math.max(100, m.rating + delta); m.games++; }
-  for (const id of c.teamB) { const m = member(id); m.rating = Math.max(100, m.rating - delta); m.games++; }
-  const winBonus = Math.min(Math.abs(sa - sb) * DIFF_POINTS, DIFF_BONUS_MAX); // 得失点差ボーナス（勝者に上乗せ・上限あり）
-  for (const id of winners) { const m = member(id); m.wins++; m.points = (m.points || 0) + WIN_POINTS + winBonus; }
-  for (const id of losers) { const m = member(id); m.points = (m.points || 0) + LOSE_POINTS; }
-
-  // ペア・対戦履歴を記録
-  if (c.format === "doubles") {
-    bump(state.togetherCounts, pairKey(c.teamA[0], c.teamA[1]));
-    bump(state.togetherCounts, pairKey(c.teamB[0], c.teamB[1]));
-  }
-  for (const a of c.teamA) for (const b of c.teamB) bump(state.vsCounts, pairKey(a, b));
-  for (const id of [...c.teamA, ...c.teamB]) session.playCount[id] = (session.playCount[id] || 0) + 1;
-
-  c.result = { sa, sb, delta, winBonus, winnerIsA: sa > sb }; // 修正時に巻き戻すため適用内容を保持
+  const { delta, winBonus, logId } = applyMatch(c.teamA, c.teamB, sa, sb, c.format);
+  c.result = { sa, sb, delta, winBonus, winnerIsA: sa > sb, logId }; // 修正時に巻き戻すため適用内容を保持
   c.saved = true;
   save(); renderMembers(); renderMatches(); pushState();
   const sign = delta >= 0 ? "+" : "";
@@ -983,6 +1056,7 @@ function editResult(i) {
   }
   for (const a of c.teamA) for (const b of c.teamB) unbump(state.vsCounts, pairKey(a, b));
   for (const id of [...c.teamA, ...c.teamB]) unbump(session.playCount, id);
+  if (r.logId && Array.isArray(state.matchLog)) state.matchLog = state.matchLog.filter(e => e.id !== r.logId); // 試合ログも取り消す
   c.saved = false; // c.result は入力欄の再表示用に残す（再保存時に上書きされる）
   save(); renderMembers(); renderMatches(); pushState();
 }
