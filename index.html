@@ -119,7 +119,17 @@
     padding: 5px 2px; border-bottom: 1px solid #ffeef4; font-size: .9rem;
   }
   .ranking-row:last-child { border-bottom: none; }
-  .ranking-pos { min-width: 22px; text-align: right; font-weight: 700; color: var(--pk-deep); font-size: .85rem; font-variant-numeric: tabular-nums; }
+  .ranking-pos {
+    min-width: 22px; height: 22px; display: inline-flex;
+    align-items: center; justify-content: center;
+    font-weight: 700; color: var(--pk-deep); font-size: .85rem;
+    font-variant-numeric: tabular-nums; border-radius: 50%;
+  }
+  /* 上位3人は金・銀・銅のバッジで強調 */
+  .ranking-pos.top-1 { background: linear-gradient(135deg, #ffd700, #ffec8b); color: #7a5200; box-shadow: 0 1px 4px rgba(122, 82, 0, .35); }
+  .ranking-pos.top-2 { background: linear-gradient(135deg, #c9ced4, #eceff1); color: #495057; box-shadow: 0 1px 4px rgba(73, 80, 87, .3); }
+  .ranking-pos.top-3 { background: linear-gradient(135deg, #cd7f32, #e5b07e); color: #5c3317; box-shadow: 0 1px 4px rgba(92, 51, 23, .3); }
+  .ranking-row.top-row .ranking-name { font-weight: 800; }
   .ranking-name {
     flex: 1; font-weight: 600; color: #59344a;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -615,9 +625,10 @@ function renderRanking() {
   wrap.innerHTML = sorted.map((m, i) => {
     const rank = rankOf(m); // 名前の横のマークは会員ランク（🥈🥇💎）に連動
     const rankIcon = rank ? ` <span title="${rank.name}">${rank.icon}</span>` : "";
+    const topCls = i < 3 ? ` top-${i + 1}` : "";
     return `
-    <div class="ranking-row">
-      <span class="ranking-pos">${i + 1}</span>
+    <div class="ranking-row${i < 3 ? " top-row" : ""}">
+      <span class="ranking-pos${topCls}">${i + 1}</span>
       <span class="ranking-name">${esc(m.name)}${rankIcon}</span>
       <span class="badge points-badge">${m.points || 0} pt</span>
     </div>`;
