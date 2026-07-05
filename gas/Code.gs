@@ -1,16 +1,19 @@
 /**
  * 高槻妖精会 出欠投票API（Google Apps Script Webアプリ）
  *
- * - GET  : 全投票データを返す { ok: true, votes: { "YYYY-MM-DD": { "名前": "yes"|"no" } } }
- * - POST : { date, name, choice } を記録して最新の全データを返す（choice: "yes" | "no" | "clear"）
+ * - GET  : 全データを返す { ok, votes: { "YYYY-MM-DD": { 名前: "yes"|"no" } }, members: [名前] }
+ * - POST : { date, name, choice } で投票を記録（choice: "yes" | "no" | "clear"）
+ *          { action: "setMembers", members: [名前] } でメンバー名簿を置き換え
+ *          いずれも最新の全データを返す
  *
  * データは同じGoogleアカウントのスプレッドシート「高槻妖精会 出欠投票」に保存されます。
  */
 
-var SHEET_NAME = "votes";
+var VOTES_SHEET = "votes";
+var MEMBERS_SHEET = "members";
 var TZ = "Asia/Tokyo";
 
-function getSheet_() {
+function getSs_() {
   var props = PropertiesService.getScriptProperties();
   var id = props.getProperty("SHEET_ID");
   var ss;
@@ -20,10 +23,14 @@ function getSheet_() {
     ss = SpreadsheetApp.create("高槻妖精会 出欠投票");
     props.setProperty("SHEET_ID", ss.getId());
   }
-  var sheet = ss.getSheetByName(SHEET_NAME);
+  return ss;
+}
+
+function getSheet_(ss, name, header) {
+  var sheet = ss.getSheetByName(name);
   if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(["date", "name", "choice", "updated"]);
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(header);
   }
   return sheet;
 }
@@ -34,7 +41,8 @@ function dateKey_(v) {
   return String(v);
 }
 
-function readVotes_(sheet) {
+function readVotes_(ss) {
+  var sheet = getSheet_(ss, VOTES_SHEET, ["date", "name", "choice", "updated"]);
   var rows = sheet.getDataRange().getValues();
   var votes = {};
   for (var i = 1; i < rows.length; i++) {
@@ -49,13 +57,35 @@ function readVotes_(sheet) {
   return votes;
 }
 
+function readMembers_(ss) {
+  var sheet = getSheet_(ss, MEMBERS_SHEET, ["name"]);
+  var rows = sheet.getDataRange().getValues();
+  var names = [];
+  for (var i = 1; i < rows.length; i++) {
+    var n = String(rows[i][0]).trim();
+    if (n) names.push(n);
+  }
+  return names;
+}
+
+function writeMembers_(ss, names) {
+  var sheet = getSheet_(ss, MEMBERS_SHEET, ["name"]);
+  sheet.clearContents();
+  var rows = [["name"]].concat(names.map(function (n) { return [n]; }));
+  sheet.getRange(1, 1, rows.length, 1).setValues(rows);
+}
+
+function payload_(ss) {
+  return { ok: true, votes: readVotes_(ss), members: readMembers_(ss) };
+}
+
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
 function doGet() {
-  return json_({ ok: true, votes: readVotes_(getSheet_()) });
+  return json_(payload_(getSs_()));
 }
 
 function doPost(e) {
@@ -63,6 +93,21 @@ function doPost(e) {
   lock.waitLock(10000);
   try {
     var body = JSON.parse(e.postData.contents);
+    var ss = getSs_();
+
+    // メンバー名簿の同期（幹事の端末から送られてくる）
+    if (body.action === "setMembers") {
+      var names = [];
+      var seen = {};
+      (body.members || []).slice(0, 100).forEach(function (raw) {
+        var n = String(raw).trim().slice(0, 20);
+        if (n && !seen[n]) { seen[n] = true; names.push(n); }
+      });
+      writeMembers_(ss, names);
+      return json_(payload_(ss));
+    }
+
+    // 投票の記録
     var date = String(body.date || "").slice(0, 10);
     var name = String(body.name || "").trim().slice(0, 20);
     var choice = String(body.choice || "");
@@ -70,7 +115,7 @@ function doPost(e) {
         (choice !== "yes" && choice !== "no" && choice !== "clear")) {
       return json_({ ok: false, error: "bad request" });
     }
-    var sheet = getSheet_();
+    var sheet = getSheet_(ss, VOTES_SHEET, ["date", "name", "choice", "updated"]);
     var rows = sheet.getDataRange().getValues();
     var rowIndex = -1;
     for (var i = 1; i < rows.length; i++) {
@@ -86,7 +131,7 @@ function doPost(e) {
     } else {
       sheet.appendRow([date, name, choice, new Date()]);
     }
-    return json_({ ok: true, votes: readVotes_(sheet) });
+    return json_(payload_(ss));
   } catch (err) {
     return json_({ ok: false, error: String(err) });
   } finally {

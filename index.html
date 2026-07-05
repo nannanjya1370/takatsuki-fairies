@@ -314,6 +314,7 @@ let state = {
 };
 let openSched = new Set(); // 回答一覧を開いている日程のindex
 let serverVotes = null;    // オンラインモード時のサーバー上の全投票 { "YYYY-MM-DD": { 名前: "yes"|"no" } }
+let serverMembers = [];    // オンラインモード時のサーバー上のメンバー名簿 [名前]
 let syncStatus = "";       // "" | "loading" | "ok" | "error"
 let session = { playCount: {} }; // ページを開いてからの出場回数（休憩の公平化用）
 let courtFormats = ["doubles", "doubles", "doubles"]; // コートごとの形式（UI選択を保持）
@@ -351,7 +352,7 @@ function addMember() {
     games: 0, wins: 0, attend: true, attendCount: 0, lastAttend: "", points: 0,
   });
   input.value = "";
-  save(); renderMembers();
+  save(); renderMembers(); syncMembers();
 }
 
 function renameMember(id) {
@@ -362,7 +363,7 @@ function renameMember(id) {
   if (!name || name === m.name) return;
   if (state.members.some(x => x.name === name && x.id !== id)) { alert("同じ名前のメンバーがいます"); return; }
   m.name = name;
-  save(); renderMembers();
+  save(); renderMembers(); syncMembers();
   if (currentMatches) renderMatches(); // 対戦表の表示名も更新
 }
 
@@ -370,7 +371,7 @@ function removeMember(id) {
   const m = member(id);
   if (!confirm(`「${m.name}」を削除しますか？（レーティング等も消えます）`)) return;
   state.members = state.members.filter(x => x.id !== id);
-  save(); renderMembers();
+  save(); renderMembers(); syncMembers();
 }
 
 function toggleAttend(id) {
@@ -428,6 +429,11 @@ function setVoterName(v) {
   renderSchedule();
 }
 
+function applyServerData(data) {
+  serverVotes = data.votes || {};
+  serverMembers = data.members || [];
+}
+
 async function fetchVotes() {
   if (!SYNC_URL) return;
   syncStatus = "loading"; renderSchedule();
@@ -435,7 +441,7 @@ async function fetchVotes() {
     const res = await fetch(SYNC_URL);
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "server error");
-    serverVotes = data.votes || {};
+    applyServerData(data);
     syncStatus = "ok";
   } catch (e) {
     console.warn("fetchVotes failed", e);
@@ -444,11 +450,24 @@ async function fetchVotes() {
   renderSchedule();
 }
 
+// メンバー名簿をサーバーへ同期（名簿を持っている幹事の端末から自動送信）
+async function syncMembers() {
+  if (!SYNC_URL || state.members.length === 0) return;
+  try {
+    const res = await fetch(SYNC_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "setMembers", members: state.members.map(m => m.name) }),
+    });
+    const data = await res.json();
+    if (data.ok) { applyServerData(data); syncStatus = "ok"; renderSchedule(); }
+  } catch (e) { console.warn("syncMembers failed", e); }
+}
+
 async function voteAttend(iso, choice) {
   // オンラインモード: サーバーに送信して全端末で共有
   if (SYNC_URL) {
     const name = myVoterName();
-    if (!name) { alert("先に「あなたの名前」を入力してください"); return; }
+    if (!name) { alert("先に「投票する人」を選んでください"); return; }
     const cur = serverVotes && serverVotes[iso] ? serverVotes[iso][name] : undefined;
     const send = cur === choice ? "clear" : choice; // 同じボタン再タップで取り消し
     syncStatus = "loading"; renderSchedule();
@@ -459,7 +478,7 @@ async function voteAttend(iso, choice) {
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || "server error");
-      serverVotes = data.votes || {};
+      applyServerData(data);
       syncStatus = "ok";
     } catch (e) {
       console.warn("vote failed", e);
@@ -488,18 +507,19 @@ function toggleSchedDetail(i) {
 function renderVoterArea() {
   const area = document.getElementById("voter-area");
   if (SYNC_URL) {
-    // オンラインモード: 名前を直接入力（メンバー名＋投票済みの名前を候補に出す）
-    const known = new Set(state.members.map(m => m.name));
-    if (serverVotes) for (const d of Object.values(serverVotes)) for (const n of Object.keys(d)) known.add(n);
+    // オンラインモード: 登録メンバーの名簿（サーバー共有）から選ぶ
     const status = syncStatus === "loading" ? "⏳ 同期中…"
       : syncStatus === "error" ? "⚠️ 通信エラー。ページを再読み込みしてください"
       : syncStatus === "ok" ? "✅ オンライン集計中（全員のスマホと共有）" : "";
-    area.innerHTML = `
-      <input id="voter-name" class="form-control form-control-sm" list="voter-name-list"
-             placeholder="あなたの名前" maxlength="20" value="${esc(myVoterName())}"
-             onchange="setVoterName(this.value)">
-      <datalist id="voter-name-list">${[...known].map(n => `<option value="${esc(n)}">`).join("")}</datalist>
-      <div class="small text-muted mt-1">${status}</div>`;
+    const me = myVoterName();
+    const picker = serverMembers.length ? `
+      <select class="form-select form-select-sm" onchange="setVoterName(this.value)">
+        <option value="">投票する人を選択…</option>
+        ${serverMembers.map(n =>
+          `<option value="${esc(n)}" ${n === me ? "selected" : ""}>${esc(n)}</option>`).join("")}
+      </select>`
+      : `<div class="small text-muted">メンバー名簿を同期中です。表示されない場合は、幹事の端末で一度サイトを開くと名簿が共有されます。</div>`;
+    area.innerHTML = `${picker}<div class="small text-muted mt-1">${status}</div>`;
   } else {
     const voter = state.voterId && member(state.voterId) ? state.voterId : null;
     area.innerHTML = `
@@ -854,7 +874,7 @@ function applyImportedData(text) {
       if (m.lastAttend === undefined) m.lastAttend = "";
       if (m.points === undefined) m.points = 0;
     });
-    save(); renderMembers();
+    save(); renderMembers(); syncMembers();
     alert("読み込みました！");
   } catch (e) { alert("読み込みに失敗しました: " + e.message); }
 }
@@ -873,6 +893,7 @@ load();
 renderMembers();
 renderFormatRows();
 fetchVotes();
+syncMembers(); // 名簿を持つ端末（幹事）から自動で名簿を共有
 </script>
 </body>
 </html>
