@@ -5,6 +5,7 @@
  * - POST : { date, name, choice } で投票を記録（choice: "yes" | "no" | "clear"）
  *          { action: "setMembers", members: [名前] } でメンバー名簿を置き換え
  *          { action: "rename", from, to } で名簿と過去の投票の名前を一括変更
+ *          { action: "setState", state: {...} } でアプリ全体の共有データ（メンバー・成績等）を保存
  *          いずれも最新の全データを返す
  *
  * データは同じGoogleアカウントのスプレッドシート「高槻妖精会 出欠投票」に保存されます。
@@ -12,6 +13,7 @@
 
 var VOTES_SHEET = "votes";
 var MEMBERS_SHEET = "members";
+var STATE_SHEET = "state";
 var TZ = "Asia/Tokyo";
 
 function getSs_() {
@@ -76,8 +78,20 @@ function writeMembers_(ss, names) {
   sheet.getRange(1, 1, rows.length, 1).setValues(rows);
 }
 
+function readState_(ss) {
+  var sheet = getSheet_(ss, STATE_SHEET, ["json"]);
+  var v = sheet.getRange(2, 1).getValue();
+  if (!v) return null;
+  try { return JSON.parse(String(v)); } catch (e) { return null; }
+}
+
+function writeState_(ss, st) {
+  var sheet = getSheet_(ss, STATE_SHEET, ["json"]);
+  sheet.getRange(2, 1).setValue(JSON.stringify(st));
+}
+
 function payload_(ss) {
-  return { ok: true, votes: readVotes_(ss), members: readMembers_(ss) };
+  return { ok: true, votes: readVotes_(ss), members: readMembers_(ss), state: readState_(ss) };
 }
 
 function json_(obj) {
@@ -105,6 +119,21 @@ function doPost(e) {
         if (n && !seen[n]) { seen[n] = true; names.push(n); }
       });
       writeMembers_(ss, names);
+      return json_(payload_(ss));
+    }
+
+    // アプリ全体の共有データを保存（メンバー・成績・ポイント等）。投票用名簿も連動更新
+    if (body.action === "setState") {
+      var st = body.state;
+      if (!st || !Array.isArray(st.members)) return json_({ ok: false, error: "bad request" });
+      writeState_(ss, st);
+      var stNames = [];
+      var stSeen = {};
+      st.members.slice(0, 100).forEach(function (m) {
+        var n = String((m && m.name) || "").trim().slice(0, 20);
+        if (n && !stSeen[n]) { stSeen[n] = true; stNames.push(n); }
+      });
+      writeMembers_(ss, stNames);
       return json_(payload_(ss));
     }
 
