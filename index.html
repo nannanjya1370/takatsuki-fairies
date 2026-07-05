@@ -690,8 +690,9 @@ function renderSchedule() {
 // ================= ポイントランキング =================
 function renderRanking() {
   // ランキングはPC用（右カラム）とスマホ用（メイン内）の2か所に描画する
-  document.querySelectorAll(".ranking-legend").forEach(el => el.textContent =
-    `勝ち +${WIN_POINTS}pt ／ 負け +${LOSE_POINTS}pt ／ 参加 +${ATTEND_POINTS}pt（1日1回）・同ポイントはレート順`);
+  document.querySelectorAll(".ranking-legend").forEach(el => el.innerHTML =
+    `勝ち +${WIN_POINTS}pt ／ 負け +${LOSE_POINTS}pt ／ 参加 +${ATTEND_POINTS}pt（1日1回）<br>` +
+    `同ポイントはレート順。レートはイロ方式：レート差から期待勝率を出し、結果との差で変動（1試合 最大±32）。格上に勝つほど大きくアップ！`);
   let html;
   if (state.members.length === 0) {
     html = `<p class="text-muted small mb-0">メンバーを追加するとランキングが表示されます</p>`;
