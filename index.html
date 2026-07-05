@@ -201,7 +201,7 @@
 
   <!-- メンバー管理 -->
   <div class="card">
-    <div class="card-header">メンバー管理 <small class="opacity-75">（チェック＝今回の参加者／全端末で自動共有）</small></div>
+    <div class="card-header">メンバー管理 <small class="opacity-75">（チェック＝<span id="attend-date">今回</span>の参加者／全端末で自動共有）</small></div>
     <div class="card-body">
       <div class="input-group mb-3">
         <input type="text" id="new-name" class="form-control" placeholder="名前を入力" maxlength="20">
@@ -243,6 +243,7 @@
 
       <button class="btn btn-main btn-lg w-100 mt-1" onclick="generateMatches()">Bibbidi-Bobbidi-Boo !!</button>
       <div id="gen-warning" class="mt-2"></div>
+      <button class="btn btn-outline-secondary w-100 mt-2" onclick="endPractice()">🏁 本日の練習終了</button>
     </div>
   </div>
 
@@ -252,16 +253,12 @@
     <div class="card-body" id="matches-area"></div>
   </div>
 
-  <!-- 結果を手動で記録（自動生成の対戦表を使わず、任意の組み合わせの結果を反映） -->
+  <!-- 過去の戦績（記録した試合のスコア修正・削除） -->
   <div class="card">
-    <div class="card-header">✍️ 結果を手動で記録</div>
-    <div class="card-body">
-      <div class="form-check form-check-inline mb-2">
-        <input class="form-check-input" type="checkbox" id="manual-singles" onchange="renderManualEntry()">
-        <label class="form-check-label small" for="manual-singles">シングルス（1対1）</label>
-      </div>
-      <div id="manual-entry-body"></div>
-      <div class="small text-muted mt-2">得失点差も記録され、ランキングに反映されます。打ち間違えたら再度正しい結果を記録し、必要なら不要なメンバーは触らずやり直せます。</div>
+    <div class="card-header" style="cursor:pointer" onclick="toggleHistory()">📋 過去の戦績（スコア修正・削除）<span class="float-end" id="history-caret">▼</span></div>
+    <div class="card-body" id="history-wrap" style="display:none">
+      <div class="small text-muted mb-2">記録した試合のスコアを直すと、全員のレート・妖精ポイントが自動で再計算されます。誤った試合は削除もできます。</div>
+      <div id="history-body"></div>
     </div>
   </div>
 
@@ -442,6 +439,7 @@ function vsCount(a, b) { return state.vsCounts[pairKey(a, b)] || 0; }
 function courtSize(fmt) { return fmt === "doubles" ? 4 : 2; }
 function rankOf(m) { return RANKS.find(r => (m.attendCount || 0) >= r.min) || null; }
 function today() { return new Date().toISOString().slice(0, 10); }
+function todayLabel() { const d = new Date(); return (d.getMonth() + 1) + "/" + d.getDate(); } // 参加者ラベル用の実日付
 
 // ================= メンバー管理 =================
 function addMember() {
@@ -532,7 +530,8 @@ function renderMembers() {
   document.getElementById("attend-count").textContent = state.members.filter(m => m.attend).length;
   renderRanking();
   renderSchedule();
-  renderManualEntry();
+  renderHistory();
+  const ad = document.getElementById("attend-date"); if (ad) ad.textContent = todayLabel();
 }
 
 // ================= 練習日程・出欠投票 =================
@@ -933,49 +932,82 @@ function renderMatches() {
     <br><small class="text-muted">※次回生成時に優先して出場します</small></div>` : "");
 }
 
-// 手動記録フォームを描画（メンバーのプルダウン＋点数）
-function renderManualEntry() {
-  const body = document.getElementById("manual-entry-body");
-  if (!body) return;
-  const singlesEl = document.getElementById("manual-singles");
-  const singles = singlesEl && singlesEl.checked;
-  const opts = state.members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join("");
-  const sel = (id) => `<select id="${id}" class="form-select form-select-sm mb-1"><option value="">選手…</option>${opts}</select>`;
-  body.innerHTML = `
-    <div class="row g-2 align-items-center">
-      <div class="col-5">${sel("mA1")}${singles ? "" : sel("mA2")}</div>
-      <div class="col-2 text-center vs-label">VS</div>
-      <div class="col-5">${sel("mB1")}${singles ? "" : sel("mB2")}</div>
-    </div>
-    <div class="d-flex gap-2 align-items-center justify-content-center mt-2">
-      <input type="number" id="mSA" class="form-control score-input" min="0" max="99">
-      <span>−</span>
-      <input type="number" id="mSB" class="form-control score-input" min="0" max="99">
-      <button class="btn btn-sm btn-main" onclick="applyManualMatch()">記録する</button>
-    </div>
-    <div class="text-center small mt-1" id="manual-msg"></div>`;
+// 過去の戦績（試合ログ）の表示・スコア修正・削除
+function toggleHistory() {
+  const wrap = document.getElementById("history-wrap");
+  const caret = document.getElementById("history-caret");
+  if (!wrap) return;
+  const show = wrap.style.display === "none";
+  wrap.style.display = show ? "block" : "none";
+  if (caret) caret.textContent = show ? "▲" : "▼";
+  if (show) renderHistory();
 }
 
-// 手動記録フォームの入力を検証して1試合を反映
-function applyManualMatch() {
-  const gv = id => { const el = document.getElementById(id); return el ? el.value : ""; };
-  const singlesEl = document.getElementById("manual-singles");
-  const singles = singlesEl && singlesEl.checked;
-  const need = singles ? 1 : 2;
-  const msg = document.getElementById("manual-msg");
-  const teamA = [gv("mA1")].concat(singles ? [] : [gv("mA2")]).filter(Boolean).map(Number);
-  const teamB = [gv("mB1")].concat(singles ? [] : [gv("mB2")]).filter(Boolean).map(Number);
-  if (teamA.length !== need || teamB.length !== need) { if (msg) msg.textContent = "選手を全員選んでください"; return; }
-  const all = [...teamA, ...teamB];
-  if (new Set(all).size !== all.length) { if (msg) msg.textContent = "同じ選手が重複しています"; return; }
-  const sa = +gv("mSA"), sb = +gv("mSB");
-  if (isNaN(sa) || isNaN(sb) || (sa === 0 && sb === 0) || sa === sb) { if (msg) msg.textContent = "点数を正しく入力してください（同点は不可）"; return; }
-  const winnerIds = sa > sb ? teamA : teamB;
-  const winnerNames = winnerIds.map(id => member(id).name).join("・");
-  const { delta, winBonus } = applyMatch(teamA, teamB, sa, sb, singles ? "singles" : "doubles");
-  save(); renderMembers(); renderManualEntry(); pushState();
-  const m2 = document.getElementById("manual-msg");
-  if (m2) m2.innerHTML = `記録しました：<b>${esc(winnerNames)}</b> の勝ち（レート±${Math.abs(delta)}${winBonus ? `、得失点差ボーナス +${winBonus}pt` : ""}）`;
+function renderHistory() {
+  const body = document.getElementById("history-body");
+  if (!body) return;
+  const log = [...(state.matchLog || [])].sort((a, b) => b.id - a.id);
+  if (!log.length) { body.innerHTML = `<p class="text-muted small mb-0">まだ記録された試合はありません</p>`; return; }
+  body.innerHTML = log.map(e => `
+    <div class="d-flex align-items-center gap-2 py-1 flex-wrap border-bottom">
+      <span class="small text-muted">${esc(e.date || "")}</span>
+      <span class="small flex-grow-1">${esc(e.teamA.join("・"))} <b>vs</b> ${esc(e.teamB.join("・"))}</span>
+      <input type="number" class="form-control form-control-sm" style="width:3.2rem" id="hs-a-${e.id}" value="${e.sa}" min="0" max="99">
+      <span>-</span>
+      <input type="number" class="form-control form-control-sm" style="width:3.2rem" id="hs-b-${e.id}" value="${e.sb}" min="0" max="99">
+      <button class="btn btn-sm btn-main py-0" onclick="editHistoryScore(${e.id})">修正</button>
+      <button class="btn btn-sm btn-outline-danger py-0" onclick="deleteHistory(${e.id})">削除</button>
+    </div>`).join("");
+}
+
+function editHistoryScore(id) {
+  const e = (state.matchLog || []).find(x => x.id === id);
+  if (!e) return;
+  const sa = +document.getElementById(`hs-a-${id}`).value;
+  const sb = +document.getElementById(`hs-b-${id}`).value;
+  if (isNaN(sa) || isNaN(sb) || (sa === 0 && sb === 0) || sa === sb) { alert("点数を正しく入力してください（同点は不可）"); return; }
+  e.sa = sa; e.sb = sb;
+  recomputeFromLog();
+  save(); renderMembers(); renderHistory(); pushState();
+}
+
+function deleteHistory(id) {
+  if (!confirm("この試合の記録を削除しますか？（全員のレート・ポイントを再計算します）")) return;
+  state.matchLog = (state.matchLog || []).filter(x => x.id !== id);
+  recomputeFromLog();
+  save(); renderMembers(); renderHistory(); pushState();
+}
+
+// 試合ログを元に全メンバーのレート・勝敗・対戦カウント・試合ポイントを一から再計算
+// 参加ポイントは attendCount ベースで別途加算。ログにない試合は対象外
+function recomputeFromLog() {
+  const byName = {};
+  state.members.forEach(m => { byName[m.name] = m; m.rating = INITIAL_RATING; m.games = 0; m.wins = 0; m._gp = 0; });
+  state.togetherCounts = {};
+  state.vsCounts = {};
+  const log = [...(state.matchLog || [])].sort((a, b) => a.id - b.id);
+  for (const e of log) {
+    const A = e.teamA.map(n => byName[n]).filter(Boolean);
+    const B = e.teamB.map(n => byName[n]).filter(Boolean);
+    if (!A.length || !B.length) continue;
+    const rA = A.reduce((s, m) => s + m.rating, 0) / A.length;
+    const rB = B.reduce((s, m) => s + m.rating, 0) / B.length;
+    const expectedA = 1 / (1 + Math.pow(10, (rB - rA) / 400));
+    const delta = Math.round(32 * ((e.sa > e.sb ? 1 : 0) - expectedA));
+    A.forEach(m => { m.rating = Math.max(100, m.rating + delta); m.games++; });
+    B.forEach(m => { m.rating = Math.max(100, m.rating - delta); m.games++; });
+    const winBonus = Math.min(Math.abs(e.sa - e.sb) * DIFF_POINTS, DIFF_BONUS_MAX);
+    const winners = e.sa > e.sb ? A : B;
+    const losers = e.sa > e.sb ? B : A;
+    winners.forEach(m => { m.wins++; m._gp += WIN_POINTS + winBonus; });
+    losers.forEach(m => { m._gp += LOSE_POINTS; });
+    if (e.format === "doubles") {
+      if (A.length === 2) bump(state.togetherCounts, pairKey(A[0].id, A[1].id));
+      if (B.length === 2) bump(state.togetherCounts, pairKey(B[0].id, B[1].id));
+    }
+    for (const a of A) for (const b of B) bump(state.vsCounts, pairKey(a.id, b.id));
+  }
+  state.members.forEach(m => { m.points = (m.attendCount || 0) * ATTEND_POINTS + (m._gp || 0); delete m._gp; });
 }
 
 // 1試合分の結果を反映する共通処理（レート・ポイント・対戦カウント・試合ログ）
@@ -1067,6 +1099,16 @@ function resetMatches() {
   state.currentMatches = null;
   document.getElementById("matches-card").style.display = "none";
   save(); pushState();
+}
+
+// 本日の練習終了：対戦表を片付け、参加チェックを外す（成績・ポイントは維持）
+function endPractice() {
+  if (!confirm("本日の練習を終了しますか？\n対戦表を片付け、参加チェックを外します（成績・妖精ポイントはそのまま残ります）。")) return;
+  state.currentMatches = null;
+  state.members.forEach(m => m.attend = false);
+  const card = document.getElementById("matches-card"); if (card) card.style.display = "none";
+  save(); renderMembers(); pushState();
+  alert("本日もお疲れ様でした！🏸");
 }
 
 // ================= データ管理エリアの開閉 =================
