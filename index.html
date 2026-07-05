@@ -464,6 +464,11 @@ function renameMember(id) {
   if (state.members.some(x => x.name === name && x.id !== id)) { alert("同じ名前のメンバーがいます"); return; }
   const oldName = m.name;
   m.name = name;
+  // 過去の戦績ログの名前も追従（ログから再計算するときに拾えるように）
+  (state.matchLog || []).forEach(e => {
+    e.teamA = e.teamA.map(n => n === oldName ? name : n);
+    e.teamB = e.teamB.map(n => n === oldName ? name : n);
+  });
   save(); renderMembers();
   renameOnServer(oldName, name); // サーバー上の名簿・過去の投票も改名に追従させる
   if (state.currentMatches) renderMatches(); // 対戦表の表示名も更新
