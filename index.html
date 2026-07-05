@@ -362,9 +362,31 @@ function renameMember(id) {
   const name = input.trim().slice(0, 20);
   if (!name || name === m.name) return;
   if (state.members.some(x => x.name === name && x.id !== id)) { alert("同じ名前のメンバーがいます"); return; }
+  const oldName = m.name;
   m.name = name;
-  save(); renderMembers(); syncMembers();
+  save(); renderMembers();
+  renameOnServer(oldName, name); // サーバー上の名簿・過去の投票も改名に追従させる
   if (currentMatches) renderMatches(); // 対戦表の表示名も更新
+}
+
+async function renameOnServer(from, to) {
+  if (myVoterName() === from) localStorage.setItem(VOTER_NAME_KEY, to); // この端末の投票者選択も追従
+  if (!SYNC_URL) { renderSchedule(); return; }
+  try {
+    const res = await fetch(SYNC_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "rename", from, to }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "server error");
+    applyServerData(data);
+    syncStatus = "ok";
+  } catch (e) {
+    console.warn("rename sync failed", e);
+    syncStatus = "error";
+  }
+  renderSchedule();
+  syncMembers(); // 念のため名簿全体も最新の状態に同期
 }
 
 function removeMember(id) {

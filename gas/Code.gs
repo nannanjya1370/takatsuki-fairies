@@ -4,6 +4,7 @@
  * - GET  : 全データを返す { ok, votes: { "YYYY-MM-DD": { 名前: "yes"|"no" } }, members: [名前] }
  * - POST : { date, name, choice } で投票を記録（choice: "yes" | "no" | "clear"）
  *          { action: "setMembers", members: [名前] } でメンバー名簿を置き換え
+ *          { action: "rename", from, to } で名簿と過去の投票の名前を一括変更
  *          いずれも最新の全データを返す
  *
  * データは同じGoogleアカウントのスプレッドシート「高槻妖精会 出欠投票」に保存されます。
@@ -104,6 +105,24 @@ function doPost(e) {
         if (n && !seen[n]) { seen[n] = true; names.push(n); }
       });
       writeMembers_(ss, names);
+      return json_(payload_(ss));
+    }
+
+    // 改名: 名簿と過去の投票の名前を一括で書き換える
+    if (body.action === "rename") {
+      var from = String(body.from || "").trim().slice(0, 20);
+      var to = String(body.to || "").trim().slice(0, 20);
+      if (!from || !to || from === to) return json_({ ok: false, error: "bad request" });
+      var vsheet = getSheet_(ss, VOTES_SHEET, ["date", "name", "choice", "updated"]);
+      var vrows = vsheet.getDataRange().getValues();
+      for (var vi = 1; vi < vrows.length; vi++) {
+        if (String(vrows[vi][1]) === from) vsheet.getRange(vi + 1, 2).setValue(to);
+      }
+      var msheet = getSheet_(ss, MEMBERS_SHEET, ["name"]);
+      var mrows = msheet.getDataRange().getValues();
+      for (var mi = 1; mi < mrows.length; mi++) {
+        if (String(mrows[mi][0]) === from) msheet.getRange(mi + 1, 1).setValue(to);
+      }
       return json_(payload_(ss));
     }
 
