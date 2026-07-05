@@ -168,9 +168,9 @@
       <div class="card">
         <div class="card-header">📅 練習日程・出欠投票</div>
         <div class="card-body py-2">
-          <select id="voter-select" class="form-select form-select-sm mb-2" onchange="setVoter(this.value)"></select>
+          <div id="voter-area" class="mb-2"></div>
           <div id="schedule-list"></div>
-          <div class="small text-muted mt-2">※日付をタップすると全員の回答が見られます。投票はこの端末に保存されます。</div>
+          <div class="small text-muted mt-2" id="sched-note"></div>
         </div>
       </div>
       <div class="card">
@@ -299,6 +299,10 @@ const SCHEDULE = [
   "2026-11-01", "2026-12-06", "2027-02-07", "2027-03-07",
 ];
 const SCHEDULE_TIME = "18:00〜21:00";
+// GAS WebアプリのURLを設定すると、投票が全端末で共有・自動集計されるオンラインモードになる。
+// 空文字のままなら従来どおりこの端末内（LocalStorage）だけで動く。
+const SYNC_URL = "";
+const VOTER_NAME_KEY = "badminton-voter-name-v1";
 
 let state = {
   members: [],        // {id, name, rating, games, wins, attend, attendCount, lastAttend, points}
@@ -309,6 +313,8 @@ let state = {
   nextId: 1,
 };
 let openSched = new Set(); // 回答一覧を開いている日程のindex
+let serverVotes = null;    // オンラインモード時のサーバー上の全投票 { "YYYY-MM-DD": { 名前: "yes"|"no" } }
+let syncStatus = "";       // "" | "loading" | "ok" | "error"
 let session = { playCount: {} }; // ページを開いてからの出場回数（休憩の公平化用）
 let courtFormats = ["doubles", "doubles", "doubles"]; // コートごとの形式（UI選択を保持）
 let currentMatches = null; // {mix, courts:[{format,teamA,teamB,saved}], resting:[ids]}
@@ -416,7 +422,54 @@ function setVoter(v) {
   save(); renderSchedule();
 }
 
-function voteAttend(iso, choice) {
+function myVoterName() { return (localStorage.getItem(VOTER_NAME_KEY) || "").trim(); }
+function setVoterName(v) {
+  localStorage.setItem(VOTER_NAME_KEY, v.trim().slice(0, 20));
+  renderSchedule();
+}
+
+async function fetchVotes() {
+  if (!SYNC_URL) return;
+  syncStatus = "loading"; renderSchedule();
+  try {
+    const res = await fetch(SYNC_URL);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "server error");
+    serverVotes = data.votes || {};
+    syncStatus = "ok";
+  } catch (e) {
+    console.warn("fetchVotes failed", e);
+    syncStatus = "error";
+  }
+  renderSchedule();
+}
+
+async function voteAttend(iso, choice) {
+  // オンラインモード: サーバーに送信して全端末で共有
+  if (SYNC_URL) {
+    const name = myVoterName();
+    if (!name) { alert("先に「あなたの名前」を入力してください"); return; }
+    const cur = serverVotes && serverVotes[iso] ? serverVotes[iso][name] : undefined;
+    const send = cur === choice ? "clear" : choice; // 同じボタン再タップで取り消し
+    syncStatus = "loading"; renderSchedule();
+    try {
+      const res = await fetch(SYNC_URL, {
+        method: "POST",
+        body: JSON.stringify({ date: iso, name, choice: send }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "server error");
+      serverVotes = data.votes || {};
+      syncStatus = "ok";
+    } catch (e) {
+      console.warn("vote failed", e);
+      syncStatus = "error";
+      alert("投票の送信に失敗しました。通信環境を確認してもう一度お試しください。");
+    }
+    renderSchedule();
+    return;
+  }
+  // ローカルモード: この端末内だけで記録
   if (!state.voterId || !member(state.voterId)) {
     alert("先に「投票する人」を選んでください"); return;
   }
@@ -432,22 +485,56 @@ function toggleSchedDetail(i) {
   renderSchedule();
 }
 
+function renderVoterArea() {
+  const area = document.getElementById("voter-area");
+  if (SYNC_URL) {
+    // オンラインモード: 名前を直接入力（メンバー名＋投票済みの名前を候補に出す）
+    const known = new Set(state.members.map(m => m.name));
+    if (serverVotes) for (const d of Object.values(serverVotes)) for (const n of Object.keys(d)) known.add(n);
+    const status = syncStatus === "loading" ? "⏳ 同期中…"
+      : syncStatus === "error" ? "⚠️ 通信エラー。ページを再読み込みしてください"
+      : syncStatus === "ok" ? "✅ オンライン集計中（全員のスマホと共有）" : "";
+    area.innerHTML = `
+      <input id="voter-name" class="form-control form-control-sm" list="voter-name-list"
+             placeholder="あなたの名前" maxlength="20" value="${esc(myVoterName())}"
+             onchange="setVoterName(this.value)">
+      <datalist id="voter-name-list">${[...known].map(n => `<option value="${esc(n)}">`).join("")}</datalist>
+      <div class="small text-muted mt-1">${status}</div>`;
+  } else {
+    const voter = state.voterId && member(state.voterId) ? state.voterId : null;
+    area.innerHTML = `
+      <select id="voter-select" class="form-select form-select-sm" onchange="setVoter(this.value)">
+        <option value="">投票する人を選択…</option>
+        ${state.members.map(m =>
+          `<option value="${m.id}" ${m.id === voter ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
+      </select>`;
+  }
+}
+
 function renderSchedule() {
-  const voter = state.voterId && member(state.voterId) ? state.voterId : null;
-  document.getElementById("voter-select").innerHTML =
-    `<option value="">投票する人を選択…</option>` +
-    state.members.map(m =>
-      `<option value="${m.id}" ${m.id === voter ? "selected" : ""}>${esc(m.name)}</option>`).join("");
+  renderVoterArea();
+  document.getElementById("sched-note").textContent = SYNC_URL
+    ? "※日付をタップすると全員の回答が見られます。投票は全員のスマホと自動で共有されます。"
+    : "※日付をタップすると全員の回答が見られます。投票はこの端末に保存されます。";
 
   document.getElementById("schedule-list").innerHTML = SCHEDULE.map((iso, i) => {
-    const votes = state.attendVotes[iso] || {};
-    const yes = state.members.filter(m => votes[m.id] === "yes");
-    const no = state.members.filter(m => votes[m.id] === "no");
-    const mine = voter ? votes[voter] : undefined;
+    let yesNames, noNames, mine;
+    if (SYNC_URL) {
+      const v = (serverVotes || {})[iso] || {};
+      yesNames = Object.keys(v).filter(n => v[n] === "yes").sort();
+      noNames = Object.keys(v).filter(n => v[n] === "no").sort();
+      mine = myVoterName() ? v[myVoterName()] : undefined;
+    } else {
+      const votes = state.attendVotes[iso] || {};
+      const voter = state.voterId && member(state.voterId) ? state.voterId : null;
+      yesNames = state.members.filter(m => votes[m.id] === "yes").map(m => m.name);
+      noNames = state.members.filter(m => votes[m.id] === "no").map(m => m.name);
+      mine = voter ? votes[voter] : undefined;
+    }
     const detail = openSched.has(i) ? `
       <div class="sched-detail">
-        <div>○ 参加（${yes.length}人）: ${yes.map(m => esc(m.name)).join("、") || "－"}</div>
-        <div>× 不参加（${no.length}人）: ${no.map(m => esc(m.name)).join("、") || "－"}</div>
+        <div>○ 参加（${yesNames.length}人）: ${yesNames.map(esc).join("、") || "－"}</div>
+        <div>× 不参加（${noNames.length}人）: ${noNames.map(esc).join("、") || "－"}</div>
       </div>` : "";
     return `
     <div class="sched-row">
@@ -460,7 +547,7 @@ function renderSchedule() {
                 onclick="voteAttend('${iso}','yes')">○ 参加</button>
         <button class="btn btn-sm btn-vote ${mine === "no" ? "vote-no-on" : "btn-outline-secondary"}"
                 onclick="voteAttend('${iso}','no')">× 不参加</button>
-        <span class="sched-counts ms-auto" onclick="toggleSchedDetail(${i})">○${yes.length} ×${no.length}</span>
+        <span class="sched-counts ms-auto" onclick="toggleSchedDetail(${i})">○${yesNames.length} ×${noNames.length}</span>
       </div>
       ${detail}
     </div>`;
@@ -785,6 +872,7 @@ document.getElementById("new-name").addEventListener("keydown", e => {
 load();
 renderMembers();
 renderFormatRows();
+fetchVotes();
 </script>
 </body>
 </html>
