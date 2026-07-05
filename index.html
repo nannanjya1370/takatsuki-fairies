@@ -902,14 +902,13 @@ function saveResult(i) {
     alert("点数を正しく入力してください（同点は保存できません）"); return;
   }
 
+  // イロレーティング: チーム平均レートで期待勝率を計算し、K=32で変動（点差は影響しない）
   const rA = c.teamA.reduce((s, id) => s + member(id).rating, 0) / c.teamA.length;
   const rB = c.teamB.reduce((s, id) => s + member(id).rating, 0) / c.teamB.length;
   const expectedA = 1 / (1 + Math.pow(10, (rB - rA) / 400));
   const scoreA = sa > sb ? 1 : 0;
-  // 得失点差で変動幅を増減（21点ゲーム基準）
-  const margin = 1 + Math.abs(sa - sb) / Math.max(21, Math.max(sa, sb));
   const K = 32;
-  const delta = Math.round(K * margin * (scoreA - expectedA));
+  const delta = Math.round(K * (scoreA - expectedA));
 
   const winners = sa > sb ? c.teamA : c.teamB;
   const losers = sa > sb ? c.teamB : c.teamA;
