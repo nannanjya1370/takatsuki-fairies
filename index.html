@@ -128,6 +128,19 @@
     background: var(--pk-strong) !important; color: #fff;
     font-variant-numeric: tabular-nums;
   }
+  .sched-row { padding: 7px 2px; border-bottom: 1px solid #ffeef4; font-size: .85rem; }
+  .sched-row:last-child { border-bottom: none; }
+  .sched-date { font-weight: 700; color: #59344a; cursor: pointer; }
+  .sched-time { font-size: .72rem; color: #b08698; font-weight: 400; }
+  .sched-arrow { float: right; color: #b08698; }
+  .btn-vote { font-size: .74rem; padding: 1px 8px; font-weight: 600; }
+  .vote-yes-on { background: var(--pk-strong) !important; color: #fff !important; border-color: var(--pk-strong) !important; }
+  .vote-no-on { background: #868e96 !important; color: #fff !important; border-color: #868e96 !important; }
+  .sched-counts { font-size: .76rem; color: #b08698; cursor: pointer; white-space: nowrap; }
+  .sched-detail {
+    background: #fff8fa; border: 1px solid #ffeef4; border-radius: 8px;
+    padding: 4px 8px; font-size: .75rem; margin-top: 5px; color: #59344a;
+  }
   @media (min-width: 992px) {
     .side-sticky { position: sticky; top: 12px; }
   }
@@ -149,9 +162,17 @@
 <div class="container-xl" style="max-width: 1200px;">
   <div class="row g-3">
 
-  <!-- 左: スポンサー広告欄 -->
+  <!-- 左: 練習日程・出欠投票 ＋ スポンサー広告欄 -->
   <div class="col-lg-3 order-3 order-lg-1">
     <div class="side-sticky">
+      <div class="card">
+        <div class="card-header">📅 練習日程・出欠投票</div>
+        <div class="card-body py-2">
+          <select id="voter-select" class="form-select form-select-sm mb-2" onchange="setVoter(this.value)"></select>
+          <div id="schedule-list"></div>
+          <div class="small text-muted mt-2">※日付をタップすると全員の回答が見られます。投票はこの端末に保存されます。</div>
+        </div>
+      </div>
       <div class="card">
         <div class="card-header">スポンサー</div>
         <div class="card-body">
@@ -272,12 +293,22 @@ const RANKS = [
   { min: 5,  name: "シルバー",     cls: "rank-silver", icon: "🥈" },
 ];
 
+// 練習日程（時間は全日程共通）
+const SCHEDULE = [
+  "2026-07-05", "2026-08-02", "2026-09-06", "2026-10-04",
+  "2026-11-01", "2026-12-06", "2027-02-07", "2027-03-07",
+];
+const SCHEDULE_TIME = "18:00〜21:00";
+
 let state = {
   members: [],        // {id, name, rating, games, wins, attend, attendCount, lastAttend, points}
   togetherCounts: {}, // "idA|idB"(小さい順) -> ペアを組んだ回数
   vsCounts: {},       // "idA|idB" -> 対戦した回数
+  attendVotes: {},    // "YYYY-MM-DD" -> { memberId: "yes"|"no" }
+  voterId: null,      // この端末で投票する人
   nextId: 1,
 };
+let openSched = new Set(); // 回答一覧を開いている日程のindex
 let session = { playCount: {} }; // ページを開いてからの出場回数（休憩の公平化用）
 let courtFormats = ["doubles", "doubles", "doubles"]; // コートごとの形式（UI選択を保持）
 let currentMatches = null; // {mix, courts:[{format,teamA,teamB,saved}], resting:[ids]}
@@ -370,6 +401,70 @@ function renderMembers() {
   }
   document.getElementById("attend-count").textContent = state.members.filter(m => m.attend).length;
   renderRanking();
+  renderSchedule();
+}
+
+// ================= 練習日程・出欠投票 =================
+function schedLabel(iso) {
+  const d = new Date(iso + "T00:00:00");
+  const wd = "日月火水木金土"[d.getDay()];
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}(${wd})`;
+}
+
+function setVoter(v) {
+  state.voterId = v ? +v : null;
+  save(); renderSchedule();
+}
+
+function voteAttend(iso, choice) {
+  if (!state.voterId || !member(state.voterId)) {
+    alert("先に「投票する人」を選んでください"); return;
+  }
+  if (!state.attendVotes[iso]) state.attendVotes[iso] = {};
+  // 同じボタンをもう一度押すと投票取り消し
+  if (state.attendVotes[iso][state.voterId] === choice) delete state.attendVotes[iso][state.voterId];
+  else state.attendVotes[iso][state.voterId] = choice;
+  save(); renderSchedule();
+}
+
+function toggleSchedDetail(i) {
+  openSched.has(i) ? openSched.delete(i) : openSched.add(i);
+  renderSchedule();
+}
+
+function renderSchedule() {
+  const voter = state.voterId && member(state.voterId) ? state.voterId : null;
+  document.getElementById("voter-select").innerHTML =
+    `<option value="">投票する人を選択…</option>` +
+    state.members.map(m =>
+      `<option value="${m.id}" ${m.id === voter ? "selected" : ""}>${esc(m.name)}</option>`).join("");
+
+  document.getElementById("schedule-list").innerHTML = SCHEDULE.map((iso, i) => {
+    const votes = state.attendVotes[iso] || {};
+    const yes = state.members.filter(m => votes[m.id] === "yes");
+    const no = state.members.filter(m => votes[m.id] === "no");
+    const mine = voter ? votes[voter] : undefined;
+    const detail = openSched.has(i) ? `
+      <div class="sched-detail">
+        <div>○ 参加（${yes.length}人）: ${yes.map(m => esc(m.name)).join("、") || "－"}</div>
+        <div>× 不参加（${no.length}人）: ${no.map(m => esc(m.name)).join("、") || "－"}</div>
+      </div>` : "";
+    return `
+    <div class="sched-row">
+      <div class="sched-date" onclick="toggleSchedDetail(${i})">${schedLabel(iso)}
+        <span class="sched-time">${SCHEDULE_TIME}</span>
+        <span class="sched-arrow">${openSched.has(i) ? "▾" : "▸"}</span>
+      </div>
+      <div class="d-flex align-items-center gap-1 mt-1">
+        <button class="btn btn-sm btn-vote ${mine === "yes" ? "vote-yes-on" : "btn-outline-pk"}"
+                onclick="voteAttend('${iso}','yes')">○ 参加</button>
+        <button class="btn btn-sm btn-vote ${mine === "no" ? "vote-no-on" : "btn-outline-secondary"}"
+                onclick="voteAttend('${iso}','no')">× 不参加</button>
+        <span class="sched-counts ms-auto" onclick="toggleSchedDetail(${i})">○${yes.length} ×${no.length}</span>
+      </div>
+      ${detail}
+    </div>`;
+  }).join("");
 }
 
 // ================= ポイントランキング =================
@@ -666,7 +761,7 @@ function applyImportedData(text) {
     const data = JSON.parse(text);
     if (!Array.isArray(data.members)) throw new Error("メンバーデータが見つかりません");
     if (!confirm(`メンバー${data.members.length}人のデータを読み込みます。この端末の現在のデータは上書きされます。よろしいですか？`)) return;
-    state = Object.assign({ togetherCounts: {}, vsCounts: {}, nextId: 1 }, data);
+    state = Object.assign({ togetherCounts: {}, vsCounts: {}, attendVotes: {}, voterId: null, nextId: 1 }, data);
     state.members.forEach(m => {
       if (m.attendCount === undefined) m.attendCount = 0;
       if (m.lastAttend === undefined) m.lastAttend = "";
