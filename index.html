@@ -328,7 +328,7 @@ const STORAGE_KEY = "badminton-pairing-v1";
 const INITIAL_RATING = 1000;
 // 勝敗ポイント: 勝ち/負けの試合結果で加算。参加ポイントは勝ちポイントの2倍（1日1回のみ）
 const WIN_POINTS = 100;
-const LOSE_POINTS = -50;
+const LOSE_POINTS = -20;
 const ATTEND_POINTS = 200;
 const DIFF_POINTS = 10;   // 得失点差1点あたりの妖精ポイント（勝者に上乗せ）
 const DIFF_BONUS_MAX = 50; // 得失点差ボーナスの上限（大差でも格差が広がりすぎないように）
@@ -357,7 +357,8 @@ let state = {
   voterId: null,      // この端末で投票する人
   pointsV2: false,    // 100pt単位換算済みフラグ。保存データに無ければload()で換算してtrueにする
   pointsV3: false,    // （旧）妖精ポイント再計算フラグ
-  pointsV4: false,    // 妖精ポイントを新レート（勝+100/負-50/参加+200）で再計算済みフラグ
+  pointsV4: false,    // （旧）
+  pointsV5: false,    // 妖精ポイントを現行値（勝+100/負-20/参加+200）で再計算済みフラグ
   nextId: 1,
 };
 let openSched = new Set(); // 回答一覧を開いている日程のindex
@@ -374,7 +375,7 @@ function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function normalizeLoadedState(s) {
   s = Object.assign({
     members: [], togetherCounts: {}, vsCounts: {},
-    attendVotes: {}, voterId: null, pointsV2: false, pointsV3: false, pointsV4: false, nextId: 1,
+    attendVotes: {}, voterId: null, pointsV2: false, pointsV3: false, pointsV4: false, pointsV5: false, nextId: 1,
     currentMatches: null,
   }, s);
   s.members.forEach(m => {
@@ -389,12 +390,12 @@ function normalizeLoadedState(s) {
   }
   // 妖精ポイントを履歴（参加回数・勝敗回数）から一度だけ再計算してそろえる
   // 過去分の得失点差は各試合の得点が未保存のため含められない（得失点差は今後の試合から加算される）
-  if (!s.pointsV4) {
+  if (!s.pointsV5) {
     s.members.forEach(m => {
       const losses = Math.max(0, (m.games || 0) - (m.wins || 0));
       m.points = (m.attendCount || 0) * ATTEND_POINTS + (m.wins || 0) * WIN_POINTS + losses * LOSE_POINTS;
     });
-    s.pointsV4 = true;
+    s.pointsV5 = true;
   }
   // 同名メンバーの重複を統合（改名や同期の行き違いで生じた二重登録を自己修復）。履歴の多い1件だけ残す
   const _activity = m => (m.games || 0) + (m.attendCount || 0) + (m.points || 0);
