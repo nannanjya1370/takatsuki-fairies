@@ -119,7 +119,7 @@
     padding: 5px 2px; border-bottom: 1px solid #ffeef4; font-size: .9rem;
   }
   .ranking-row:last-child { border-bottom: none; }
-  .ranking-pos { min-width: 40px; font-weight: 700; color: var(--pk-deep); font-size: .85rem; }
+  .ranking-pos { min-width: 22px; text-align: right; font-weight: 700; color: var(--pk-deep); font-size: .85rem; font-variant-numeric: tabular-nums; }
   .ranking-name {
     flex: 1; font-weight: 600; color: #59344a;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -612,7 +612,7 @@ function renderRanking() {
     const rankIcon = rank ? ` <span title="${rank.name}">${rank.icon}</span>` : "";
     return `
     <div class="ranking-row">
-      <span class="ranking-pos">${i + 1}位</span>
+      <span class="ranking-pos">${i + 1}</span>
       <span class="ranking-name">${esc(m.name)}${rankIcon}</span>
       <span class="badge points-badge">${m.points || 0} pt</span>
     </div>`;
