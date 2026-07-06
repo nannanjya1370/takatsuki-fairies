@@ -1088,6 +1088,25 @@ function applyMatch(teamA, teamB, sa, sb, format) {
 }
 
 // ================= レーティング更新（簡易イロ） =================
+// 保存前チェック用: 点数が不自然なら理由を返す（ブロックせず警告にとどめる）
+function scoreWarning(sa, sb) {
+  const hi = Math.max(sa, sb);
+  if (hi > 40) return `点数が大きすぎませんか？（${sa} - ${sb}）`;
+  if (hi < 11) return `勝者の点数が11点未満です（${sa} - ${sb}）`;
+  return "";
+}
+// 同じ日・同じ対戦カード・同じスコアの試合が既にあれば true（二重記録の検知）
+function duplicateMatchExists(teamA, teamB, sa, sb) {
+  const key = ids => ids.map(id => memberSafe(id).name).sort().join(",");
+  const a = key(teamA), b = key(teamB), d = today();
+  const hi = Math.max(sa, sb), lo = Math.min(sa, sb);
+  return (state.matchLog || []).some(e => {
+    if (e.date !== d) return false;
+    const ea = [...(e.teamA || [])].sort().join(","), eb = [...(e.teamB || [])].sort().join(",");
+    const sameTeams = (ea === a && eb === b) || (ea === b && eb === a);
+    return sameTeams && Math.max(e.sa, e.sb) === hi && Math.min(e.sa, e.sb) === lo;
+  });
+}
 function saveResult(i) {
   const c = state.currentMatches.courts[i];
   if (c.saved) return;
@@ -1096,6 +1115,17 @@ function saveResult(i) {
   if (isNaN(sa) || isNaN(sb) || (sa === 0 && sb === 0) || sa === sb) {
     alert("点数を正しく入力してください（同点は保存できません）"); return;
   }
+
+  // 記録前にチーム名とスコアを確認（取り違え・打ち間違い・二重記録を防ぐ）
+  const nameA = c.teamA.map(id => memberSafe(id).name).join("・");
+  const nameB = c.teamB.map(id => memberSafe(id).name).join("・");
+  let msg = `${nameA}  ${sa} - ${sb}  ${nameB}\nこの内容で記録します。よろしいですか？`;
+  const warn = scoreWarning(sa, sb);
+  if (warn) msg = `⚠️ ${warn}\n\n` + msg;
+  if (duplicateMatchExists(c.teamA, c.teamB, sa, sb)) {
+    msg = `⚠️ 同じ内容の試合が既に記録されています（二重記録の可能性）。\n\n` + msg;
+  }
+  if (!confirm(msg)) return;
 
   const { delta, winBonus, logId, logUid } = applyMatch(c.teamA, c.teamB, sa, sb, c.format);
   c.result = { sa, sb, delta, winBonus, winnerIsA: sa > sb, logId, logUid }; // 修正時に巻き戻すため適用内容を保持
