@@ -358,6 +358,18 @@ const SCHEDULE_TIME = "18:00〜21:00";
 // 空文字のままなら従来どおりこの端末内（LocalStorage）だけで動く。
 const SYNC_URL = "https://script.google.com/macros/s/AKfycbyP0mOQd3jgylu03d7If3g-Yd979WQXoN5sat2VDoBM-CMoyCDyp1EgyjpjIMaTxcUD/exec";
 const VOTER_NAME_KEY = "badminton-voter-name-v1";
+const DEVICE_ID_KEY = "badminton-device-id-v1";
+// 端末ごとの一意ID（試合ログのグローバル一意キー生成に使う。共有stateには載せずローカルに保持）
+const DEVICE_ID = (function () {
+  let d = localStorage.getItem(DEVICE_ID_KEY);
+  if (!d) { d = Date.now().toString(36) + Math.random().toString(36).slice(2, 8); localStorage.setItem(DEVICE_ID_KEY, d); }
+  return d;
+})();
+// 試合ログの端末をまたいだ一意キー。新規はuid、uidの無い旧データは内容から生成して同一試合の重複を吸収する
+function logKey(e) {
+  if (e.uid) return e.uid;
+  return "legacy:" + [e.date, e.format, (e.teamA || []).join(","), (e.teamB || []).join(","), e.sa, e.sb].join("|");
+}
 
 let state = {
   members: [],        // {id, name, rating, games, wins, attend, attendCount, lastAttend, points}
@@ -369,8 +381,9 @@ let state = {
   pointsV3: false,    // （旧）妖精ポイント再計算フラグ
   pointsV4: false,    // （旧）
   pointsV5: false,    // 妖精ポイントを現行値（勝+100/負-20/参加+200）で再計算済みフラグ
-  matchLog: [],       // 試合ログ {id,date,format,teamA:[名前],teamB:[名前],sa,sb} 得失点差の把握用
+  matchLog: [],       // 試合ログ {id,uid,date,format,teamA:[名前],teamB:[名前],sa,sb} 得失点差の把握用
   matchLogSeq: 0,     // 試合ログのID採番
+  deletedLogs: [],    // 削除済み試合ログのキー（union同期で復活させない tombstone）
   nextId: 1,
 };
 let openSched = new Set(); // 回答一覧を開いている日程のindex
@@ -388,7 +401,7 @@ function normalizeLoadedState(s) {
   s = Object.assign({
     members: [], togetherCounts: {}, vsCounts: {},
     attendVotes: {}, voterId: null, pointsV2: false, pointsV3: false, pointsV4: false, pointsV5: false,
-    matchLog: [], matchLogSeq: 0, nextId: 1,
+    matchLog: [], matchLogSeq: 0, deletedLogs: [], nextId: 1,
     currentMatches: null,
   }, s);
   s.members.forEach(m => {
@@ -573,27 +586,46 @@ async function fetchVotes() {
     // メンバー・成績・対戦表などの共有データを取り込む（空データで上書きしない）
     if (data.state && Array.isArray(data.state.members) && data.state.members.length) {
       const localMembers = state.members;
-      const activity = m => (m.games || 0) + (m.attendCount || 0); // 履歴の多さ
+      const localLog = state.matchLog || [];
+      const localDeleted = state.deletedLogs || [];
+      const serverLogLen = (data.state.matchLog || []).length;
       state = normalizeLoadedState(data.state);
       let changed = 0;
+      // この端末だけに登録されているメンバーは名前で合流させる（消さない）。成績はログから再計算で埋まる
       for (const lm of localMembers) {
-        const sm = state.members.find(x => x.name === lm.name);
-        if (!sm) {
-          // この端末だけに登録されているメンバーは名前で合流させる（消さない）
+        if (!state.members.find(x => x.name === lm.name)) {
           state.members.push(Object.assign({}, lm, { id: state.nextId++ }));
-          changed++;
-        } else if (activity(lm) > activity(sm)) {
-          // 同名メンバーは履歴の多い方の成績を採用（成績ゼロの重複が本物を上書きしないように）
-          Object.assign(sm, {
-            rating: lm.rating, games: lm.games, wins: lm.wins,
-            attendCount: lm.attendCount, lastAttend: lm.lastAttend, points: lm.points,
-          });
           changed++;
         }
       }
+      // 出席回数は端末間で最大値を採用（ログに出ない参加分も減らさない）
+      for (const lm of localMembers) {
+        const sm = state.members.find(x => x.name === lm.name);
+        if (sm && (lm.attendCount || 0) > (sm.attendCount || 0)) {
+          sm.attendCount = lm.attendCount; sm.lastAttend = lm.lastAttend || sm.lastAttend; changed++;
+        }
+      }
+      // 試合ログを和集合でマージ（削除済みは復活させない）。丸ごと上書きで消えていた結果が積み上がって復元される
+      const delSet = new Set([...(state.deletedLogs || []), ...localDeleted]);
+      const seen = new Set();
+      const merged = [];
+      for (const e of [...(state.matchLog || []), ...localLog]) {
+        const k = logKey(e);
+        if (delSet.has(k) || seen.has(k)) continue;
+        seen.add(k); merged.push(e);
+      }
+      merged.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) || ((a.id || 0) - (b.id || 0)));
+      let seq = 0;
+      for (const e of merged) { if (!e.uid) e.uid = logKey(e); e.id = ++seq; } // 端末をまたいだID重複を解消しつつuidは固定
+      state.matchLog = merged;
+      state.matchLogSeq = seq;
+      state.deletedLogs = [...delSet];
+      if (merged.length !== serverLogLen) changed++;
+      // 成績・レート・対戦数・ポイントをマージ後のログから再計算してそろえる
+      recomputeFromLog();
       save(); renderMembers();
       if (state.currentMatches) renderMatches();
-      if (changed) pushState(); // 合流・修復分を全端末へ共有
+      if (changed) pushState(); // 合流・復元分を全端末へ共有
     } else if (state.members.length) {
       pushState(); // サーバーが空でこの端末にデータがあれば初回共有
     }
@@ -971,13 +1003,18 @@ function editHistoryScore(id) {
   const sa = +document.getElementById(`hs-a-${id}`).value;
   const sb = +document.getElementById(`hs-b-${id}`).value;
   if (isNaN(sa) || isNaN(sb) || (sa === 0 && sb === 0) || sa === sb) { alert("点数を正しく入力してください（同点は不可）"); return; }
-  e.sa = sa; e.sb = sb;
+  // 旧ログを墓標にし、修正後を新しいログとして積む（他端末とマージしても最新の点数が残る）
+  (state.deletedLogs = state.deletedLogs || []).push(logKey(e));
+  const newId = state.matchLogSeq = (state.matchLogSeq || 0) + 1;
+  e.id = newId; e.uid = DEVICE_ID + ":" + newId; e.sa = sa; e.sb = sb;
   recomputeFromLog();
   save(); renderMembers(); renderHistory(); pushState();
 }
 
 function deleteHistory(id) {
   if (!confirm("この試合の記録を削除しますか？（全員のレート・ポイントを再計算します）")) return;
+  const e = (state.matchLog || []).find(x => x.id === id);
+  if (e) (state.deletedLogs = state.deletedLogs || []).push(logKey(e));
   state.matchLog = (state.matchLog || []).filter(x => x.id !== id);
   recomputeFromLog();
   save(); renderMembers(); renderHistory(); pushState();
@@ -990,7 +1027,7 @@ function recomputeFromLog() {
   state.members.forEach(m => { byName[m.name] = m; m.rating = INITIAL_RATING; m.games = 0; m.wins = 0; m._gp = 0; });
   state.togetherCounts = {};
   state.vsCounts = {};
-  const log = [...(state.matchLog || [])].sort((a, b) => a.id - b.id);
+  const log = [...(state.matchLog || [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) || ((a.id || 0) - (b.id || 0)));
   for (const e of log) {
     const A = e.teamA.map(n => byName[n]).filter(Boolean);
     const B = e.teamB.map(n => byName[n]).filter(Boolean);
@@ -1043,10 +1080,11 @@ function applyMatch(teamA, teamB, sa, sb, format) {
   for (const a of teamA) for (const b of teamB) bump(state.vsCounts, pairKey(a, b));
   for (const id of [...teamA, ...teamB]) session.playCount[id] = (session.playCount[id] || 0) + 1;
   const logId = state.matchLogSeq = (state.matchLogSeq || 0) + 1;
+  const logUid = DEVICE_ID + ":" + logId;
   if (!Array.isArray(state.matchLog)) state.matchLog = [];
-  state.matchLog.push({ id: logId, date: today(), format,
+  state.matchLog.push({ id: logId, uid: logUid, date: today(), format,
     teamA: teamA.map(id => member(id).name), teamB: teamB.map(id => member(id).name), sa, sb });
-  return { delta, winBonus, logId };
+  return { delta, winBonus, logId, logUid };
 }
 
 // ================= レーティング更新（簡易イロ） =================
@@ -1059,8 +1097,8 @@ function saveResult(i) {
     alert("点数を正しく入力してください（同点は保存できません）"); return;
   }
 
-  const { delta, winBonus, logId } = applyMatch(c.teamA, c.teamB, sa, sb, c.format);
-  c.result = { sa, sb, delta, winBonus, winnerIsA: sa > sb, logId }; // 修正時に巻き戻すため適用内容を保持
+  const { delta, winBonus, logId, logUid } = applyMatch(c.teamA, c.teamB, sa, sb, c.format);
+  c.result = { sa, sb, delta, winBonus, winnerIsA: sa > sb, logId, logUid }; // 修正時に巻き戻すため適用内容を保持
   c.saved = true;
   save(); renderMembers(); renderMatches(); pushState();
   const sign = delta >= 0 ? "+" : "";
@@ -1093,7 +1131,11 @@ function editResult(i) {
   }
   for (const a of c.teamA) for (const b of c.teamB) unbump(state.vsCounts, pairKey(a, b));
   for (const id of [...c.teamA, ...c.teamB]) unbump(session.playCount, id);
-  if (r.logId && Array.isArray(state.matchLog)) state.matchLog = state.matchLog.filter(e => e.id !== r.logId); // 試合ログも取り消す
+  if (r.logId && Array.isArray(state.matchLog)) {
+    const le = state.matchLog.find(e => (r.logUid && e.uid === r.logUid) || e.id === r.logId); // 試合ログも取り消す
+    if (le) (state.deletedLogs = state.deletedLogs || []).push(logKey(le));
+    state.matchLog = state.matchLog.filter(e => e !== le);
+  }
   c.saved = false; // c.result は入力欄の再表示用に残す（再保存時に上書きされる）
   save(); renderMembers(); renderMatches(); pushState();
 }
