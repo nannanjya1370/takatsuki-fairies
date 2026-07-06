@@ -431,6 +431,40 @@ function normalizeLoadedState(s) {
     if (!cur || _activity(m) > _activity(cur)) _best.set(m.name, m);
   }
   if (_best.size !== s.members.length) s.members = s.members.filter(m => _best.get(m.name) === m);
+  // 近似重複の自己修復: 名前がほぼ同じ「活動ゼロ」の空メンバーは、履歴のある本体に統合して消す。
+  // 端末をまたいだ改名の行き違いで生まれる空の二重登録（例:「の」の有無違い）を防ぐ。
+  // 純粋な新規メンバーは似た名前の本体が無いので残る（誤削除しない）。
+  {
+    const _norm = n => String(n || "").normalize("NFKC").replace(/\s+/g, "");
+    const _act = m => (m.games || 0) + (m.wins || 0) + (m.attendCount || 0) + (m.points || 0);
+    const _dist = (a, b) => {
+      if (Math.abs(a.length - b.length) > 2) return 99;
+      const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+      for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+      for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+      for (let i = 1; i <= a.length; i++)
+        for (let j = 1; j <= b.length; j++)
+          dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      return dp[a.length][b.length];
+    };
+    const _similar = (x, y) => {
+      const a = _norm(x), b = _norm(y);
+      if (a.length < 4 || b.length < 4) return a === b; // 短い名前は完全一致のみ（別人の誤統合を防ぐ）
+      return a === b || a.includes(b) || b.includes(a) || _dist(a, b) <= 2;
+    };
+    const removeIds = new Set();
+    for (const m of s.members) {
+      if (_act(m) !== 0 || removeIds.has(m.id)) continue; // 本体（活動あり）は消さない
+      const twin = s.members.find(x => x !== m && !removeIds.has(x.id) && _act(x) > 0 && _similar(x.name, m.name));
+      if (twin) removeIds.add(m.id);
+    }
+    if (removeIds.size) {
+      s.members = s.members.filter(m => !removeIds.has(m.id));
+      for (const date in (s.attendVotes || {})) {
+        for (const id of removeIds) delete s.attendVotes[date][id]; // 空メンバーに紐づく投票も掃除
+      }
+    }
+  }
   // nextIdの整合性を保証（ID重複によるデータ破損を防ぐ）
   const maxId = s.members.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
   if (!s.nextId || s.nextId <= maxId) s.nextId = maxId + 1;
