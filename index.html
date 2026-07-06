@@ -342,6 +342,21 @@ const LOSE_POINTS = -10;
 const ATTEND_POINTS = 50;
 const DIFF_POINTS = 2;   // 得失点差1点あたりの妖精ポイント（勝者に上乗せ）
 const DIFF_BONUS_MAX = 10; // 得失点差ボーナスの上限（大差でも格差が広がりすぎないように）
+// レート変動（イロ方式）に得失点差を控えめに反映する。差が開きすぎないよう上限＋減衰つき。
+const K_FACTOR = 32;      // 基本の変動幅
+const MOV_CLOSE = 2;      // 点差がこれ以下は僅差＝上乗せなし（従来と同じ挙動）
+const MOV_SLOPE = 0.05;   // 点差1点あたりの上乗せ率
+const MOV_CAP = 0.4;      // 上乗せの上限（最大 +40%）
+// A視点のレート変動を返す（Aが勝てば正）。得失点差ボーナスは、格上が大勝したときほど減衰させる
+function ratingDelta(rA, rB, sa, sb) {
+  const expectedA = 1 / (1 + Math.pow(10, (rB - rA) / 400));
+  const aWon = sa > sb;
+  const margin = Math.abs(sa - sb);
+  const winnerR = aWon ? rA : rB, loserR = aWon ? rB : rA;
+  const damp = Math.min(1, 2.2 / (0.001 * (winnerR - loserR) + 2.2)); // 格上が勝つほど大差ボーナスを減衰
+  const movBonus = Math.min(MOV_SLOPE * Math.max(0, margin - MOV_CLOSE), MOV_CAP) * damp;
+  return Math.round(K_FACTOR * (1 + movBonus) * ((aWon ? 1 : 0) - expectedA));
+}
 const RANKS = [
   { min: 30, name: "ダイヤモンド", cls: "rank-diamond", icon: "💎" },
   { min: 15, name: "ゴールド",     cls: "rank-gold", icon: "🥇" },
@@ -1068,8 +1083,7 @@ function recomputeFromLog() {
     if (!A.length || !B.length) continue;
     const rA = A.reduce((s, m) => s + m.rating, 0) / A.length;
     const rB = B.reduce((s, m) => s + m.rating, 0) / B.length;
-    const expectedA = 1 / (1 + Math.pow(10, (rB - rA) / 400));
-    const delta = Math.round(32 * ((e.sa > e.sb ? 1 : 0) - expectedA));
+    const delta = ratingDelta(rA, rB, e.sa, e.sb);
     A.forEach(m => { m.rating = Math.max(100, m.rating + delta); m.games++; });
     B.forEach(m => { m.rating = Math.max(100, m.rating - delta); m.games++; });
     const winBonus = Math.min(Math.abs(e.sa - e.sb) * DIFF_POINTS, DIFF_BONUS_MAX);
@@ -1097,9 +1111,7 @@ function applyMatch(teamA, teamB, sa, sb, format) {
   }
   const rA = teamA.reduce((s, id) => s + member(id).rating, 0) / teamA.length;
   const rB = teamB.reduce((s, id) => s + member(id).rating, 0) / teamB.length;
-  const expectedA = 1 / (1 + Math.pow(10, (rB - rA) / 400));
-  const K = 32;
-  const delta = Math.round(K * ((sa > sb ? 1 : 0) - expectedA));
+  const delta = ratingDelta(rA, rB, sa, sb);
   const winners = sa > sb ? teamA : teamB;
   const losers = sa > sb ? teamB : teamA;
   for (const id of teamA) { const m = member(id); m.rating = Math.max(100, m.rating + delta); m.games++; }
