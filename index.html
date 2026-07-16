@@ -552,6 +552,14 @@ function today() { return new Date().toISOString().slice(0, 10); }
 // 端末のローカル日付を "YYYY-MM-DD" で返す（練習日程の「過ぎた日」判定用）
 function localTodayIso() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 function todayLabel() { const d = new Date(); const wd = "日月火水木金土"[d.getDay()]; return (d.getMonth() + 1) + "/" + d.getDate() + "(" + wd + ")"; } // 参加者ラベル用の実日付（サイトを開いた日）
+// メンバー管理のチェック用ラベル: 練習日程の一番上（直近の練習日）に合わせる
+function nextScheduleLabel() {
+  const iso = SCHEDULE.find(x => x >= localTodayIso());
+  if (!iso) return todayLabel();
+  const d = new Date(iso + "T00:00:00");
+  const wd = "日月火水木金土"[d.getDay()];
+  return (d.getMonth() + 1) + "/" + d.getDate() + "(" + wd + ")";
+}
 
 // ================= メンバー管理 =================
 function addMember() {
@@ -648,7 +656,7 @@ function renderMembers() {
   renderRanking();
   renderSchedule();
   renderHistory();
-  const ad = document.getElementById("attend-date"); if (ad) ad.textContent = todayLabel();
+  const ad = document.getElementById("attend-date"); if (ad) ad.textContent = nextScheduleLabel();
 }
 
 // ================= 練習日程・出欠投票 =================
