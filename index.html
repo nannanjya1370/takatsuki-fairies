@@ -157,6 +157,7 @@
   .post-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .post-author { font-weight: 800; color: var(--pk-deep); }
   .post-date { font-size: .72rem; color: #b08698; margin-left: auto; }
+  .post-del { font-size: .72rem; line-height: 1.2; padding: 1px 6px !important; }
   .post-photo { width: 100%; border-radius: 10px; margin: 6px 0; display: block; background: #fff0f5; }
   .post-comment { color: #59344a; white-space: pre-wrap; word-break: break-word; }
   .post-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
@@ -1365,9 +1366,13 @@ function renderPostIdentity() {
 }
 
 function postDateLabel(p) {
-  if (p.date && /^\d{4}-\d{2}-\d{2}$/.test(p.date)) return schedLabel(p.date);
-  if (p.created) { const d = new Date(p.created); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`; }
-  return "";
+  // 投稿時刻(created)があれば日付＋時刻、無ければ練習日だけを表示
+  const t = p.created ? new Date(p.created)
+    : (p.date && /^\d{4}-\d{2}-\d{2}$/.test(p.date) ? new Date(p.date + "T00:00:00") : null);
+  if (!t || isNaN(t)) return "";
+  const wd = "日月火水木金土"[t.getDay()];
+  const hm = p.created ? ` ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}` : "";
+  return `${t.getMonth() + 1}/${t.getDate()}(${wd})${hm}`;
 }
 
 function renderPosts() {
@@ -1387,6 +1392,7 @@ function renderPosts() {
         <div class="post-head">
           <span class="post-author">${esc(p.name || "名無し")}</span>
           <span class="post-date">${esc(postDateLabel(p))}</span>
+          <button class="btn btn-sm btn-outline-danger py-0 post-del" onclick="deletePost('${p.id}')" title="この投稿を削除">🗑</button>
         </div>
         ${p.photo ? `<img class="post-photo" src="${esc(p.photo)}" alt="練習写真" loading="lazy">` : ""}
         ${p.comment ? `<div class="post-comment">${esc(p.comment)}</div>` : ""}
@@ -1474,6 +1480,16 @@ async function toggleCheer(postId) {
     if (!data.ok) throw new Error(data.error || "server error");
     applyServerData(data); renderPosts();
   } catch (e) { console.warn("cheer failed", e); alert("応援の送信に失敗しました。"); }
+}
+
+async function deletePost(postId) {
+  if (!confirm("この投稿を削除します。よろしいですか？（写真も一緒に削除されます）")) return;
+  try {
+    const res = await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ action: "deletePost", postId }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "server error");
+    applyServerData(data); renderPosts();
+  } catch (e) { console.warn("deletePost failed", e); alert("削除に失敗しました。通信環境を確認してもう一度お試しください。"); }
 }
 
 async function submitComment(postId) {

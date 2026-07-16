@@ -9,6 +9,7 @@
  *          { action: "addPost", name, comment, date, photo } で練習の様子を投稿（写真はDriveへ）
  *          { action: "cheer", postId, name } でがんばれ（応援）をトグル
  *          { action: "postComment", postId, name, text } で投稿にコメント
+ *          { action: "deletePost", postId } で投稿を削除（写真もゴミ箱へ）
  *          いずれも最新の全データを返す（GETは posts も含む）
  *
  * データは同じGoogleアカウントのスプレッドシート「高槻妖精会 出欠投票」に保存されます。
@@ -248,6 +249,19 @@ function doPost(e) {
       var idx = cheers.indexOf(cName);
       if (idx >= 0) cheers.splice(idx, 1); else cheers.push(cName); // もう一度押すと取り消し
       csheet.getRange(cRow, 6).setValue(JSON.stringify(cheers));
+      return json_(payload_(ss));
+    }
+
+    // 練習の様子: 投稿を削除（写真もDriveからゴミ箱へ）
+    if (body.action === "deletePost") {
+      var dPostId = String(body.postId || "");
+      if (!dPostId) return json_({ ok: false, error: "bad request" });
+      var dsheet = postsSheet_(ss);
+      var dRow = findPostRow_(dsheet, dPostId);
+      if (dRow < 0) return json_({ ok: false, error: "post not found" });
+      var dPhotoId = String(dsheet.getRange(dRow, 5).getValue() || "");
+      if (dPhotoId) { try { DriveApp.getFileById(dPhotoId).setTrashed(true); } catch (e) {} }
+      dsheet.deleteRow(dRow);
       return json_(payload_(ss));
     }
 
