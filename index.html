@@ -549,6 +549,8 @@ function vsCount(a, b) { return state.vsCounts[pairKey(a, b)] || 0; }
 function courtSize(fmt) { return fmt === "doubles" ? 4 : 2; }
 function rankOf(m) { return RANKS.find(r => (m.attendCount || 0) >= r.min) || null; }
 function today() { return new Date().toISOString().slice(0, 10); }
+// 端末のローカル日付を "YYYY-MM-DD" で返す（練習日程の「過ぎた日」判定用）
+function localTodayIso() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 function todayLabel() { const d = new Date(); const wd = "日月火水木金土"[d.getDay()]; return (d.getMonth() + 1) + "/" + d.getDate() + "(" + wd + ")"; } // 参加者ラベル用の実日付（サイトを開いた日）
 
 // ================= メンバー管理 =================
@@ -823,7 +825,10 @@ function renderSchedule() {
     ? "※日付をタップすると全員の回答が見られます。投票は全員のスマホと自動で共有されます。"
     : "※日付をタップすると全員の回答が見られます。投票はこの端末に保存されます。";
 
-  document.getElementById("schedule-list").innerHTML = SCHEDULE.map((iso, i) => {
+  // 過ぎた練習日は一覧から自動で除外（元のインデックスiは保持して開閉状態を保つ）
+  const todayIso = localTodayIso();
+  const upcoming = SCHEDULE.map((iso, i) => ({ iso, i })).filter(x => x.iso >= todayIso);
+  document.getElementById("schedule-list").innerHTML = (upcoming.length ? upcoming.map(({ iso, i }) => {
     let yesNames, noNames, mine;
     if (SYNC_URL) {
       const v = (serverVotes || {})[iso] || {};
@@ -857,7 +862,7 @@ function renderSchedule() {
       </div>
       ${detail}
     </div>`;
-  }).join("");
+  }).join("") : `<p class="text-muted small mb-0">今後の練習日程はまだ登録されていません。</p>`);
 }
 
 // ================= ポイントランキング =================
