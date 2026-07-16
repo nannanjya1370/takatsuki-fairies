@@ -168,6 +168,8 @@
   .cmt-name { font-weight: 700; color: var(--pk-deep); }
   .cmt-add { display: flex; gap: 6px; margin-top: 6px; }
   .photo-preview { max-width: 100%; border-radius: 8px; margin-top: 8px; display: none; }
+  .photo-pick-btn { cursor: pointer; white-space: nowrap; font-weight: 700; }
+  #photo-name { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @media (min-width: 992px) {
     .side-sticky { position: sticky; top: 12px; }
   }
@@ -278,8 +280,10 @@
       <div class="post-form">
         <textarea id="post-comment" class="form-control form-control-sm mb-2" rows="2" placeholder="今日の練習の一言コメント（例：ダブルス白熱してます！）" maxlength="500"></textarea>
         <div class="d-flex gap-2 align-items-center flex-wrap">
-          <input type="file" id="post-photo" accept="image/*" class="form-control form-control-sm" style="max-width:220px" onchange="onPhotoSelected(this)">
-          <button class="btn btn-main btn-sm" onclick="submitPost()" id="post-submit-btn">投稿する</button>
+          <input type="file" id="post-photo" accept="image/*" onchange="onPhotoSelected(this)" hidden>
+          <label for="post-photo" class="btn btn-outline-pk btn-sm photo-pick-btn">📷 写真を選ぶ</label>
+          <span class="small text-muted" id="photo-name">写真は任意です</span>
+          <button class="btn btn-main btn-sm ms-auto" onclick="submitPost()" id="post-submit-btn">投稿する</button>
           <span class="small text-muted" id="post-status"></span>
         </div>
         <img id="photo-preview" class="photo-preview" alt="プレビュー">
@@ -1405,7 +1409,9 @@ function renderPosts() {
 function onPhotoSelected(input) {
   const file = input.files && input.files[0];
   const preview = document.getElementById("photo-preview");
-  if (!file) { pendingPhoto = null; preview.style.display = "none"; return; }
+  const nameEl = document.getElementById("photo-name");
+  if (!file) { pendingPhoto = null; preview.style.display = "none"; if (nameEl) nameEl.textContent = "写真は任意です"; return; }
+  if (nameEl) nameEl.textContent = "✅ " + file.name;
   const reader = new FileReader();
   reader.onload = e => {
     const img = new Image();
@@ -1447,6 +1453,7 @@ async function submitPost() {
     document.getElementById("post-comment").value = "";
     document.getElementById("post-photo").value = "";
     document.getElementById("photo-preview").style.display = "none";
+    document.getElementById("photo-name").textContent = "写真は任意です";
     pendingPhoto = null;
     status.textContent = "投稿しました！";
     renderPosts();
