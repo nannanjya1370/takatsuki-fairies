@@ -165,8 +165,14 @@
   .cheer-on { background: var(--pk-strong) !important; color: #fff !important; border-color: var(--pk-strong) !important; }
   .cheer-names { font-size: .72rem; color: #b08698; }
   .post-comments { margin-top: 8px; border-top: 1px dashed var(--pk-border); padding-top: 6px; }
-  .cmt-row { font-size: .8rem; color: #59344a; padding: 3px 0; }
-  .cmt-name { font-weight: 700; color: var(--pk-deep); }
+  .cmt-row { font-size: .8rem; color: #59344a; padding: 3px 0; display: flex; align-items: center; gap: 4px; }
+  .cmt-name { font-weight: 700; color: var(--pk-deep); flex-shrink: 0; }
+  .cmt-text { flex: 1; word-break: break-word; }
+  .cmt-date { flex-shrink: 0; font-size: .68rem; color: #b08698; white-space: nowrap; }
+  .cmt-actions { flex-shrink: 0; white-space: nowrap; }
+  .cmt-edit, .cmt-del { font-size: .8rem; line-height: 1; color: #b08698; text-decoration: none; }
+  .cmt-edit:hover { color: var(--pk-deep); }
+  .cmt-del:hover { color: #dc3545; }
   .cmt-add { display: flex; gap: 6px; margin-top: 6px; }
   .photo-preview { max-width: 100%; border-radius: 8px; margin-top: 8px; display: none; }
   .photo-pick-btn { cursor: pointer; white-space: nowrap; font-weight: 700; }
@@ -1392,6 +1398,7 @@ function renderPosts() {
         <div class="post-head">
           <span class="post-author">${esc(p.name || "名無し")}</span>
           <span class="post-date">${esc(postDateLabel(p))}</span>
+          <button class="btn btn-sm btn-outline-pk py-0 post-edit" onclick="editPost('${p.id}')" title="コメントを編集">✎</button>
           <button class="btn btn-sm btn-outline-danger py-0 post-del" onclick="deletePost('${p.id}')" title="この投稿を削除">🗑</button>
         </div>
         ${p.photo ? `<img class="post-photo" src="${esc(p.photo)}" alt="練習写真" loading="lazy">` : ""}
@@ -1401,7 +1408,14 @@ function renderPosts() {
           ${cheers.length ? `<span class="cheer-names">${esc(cheers.join("・"))}</span>` : ""}
         </div>
         <div class="post-comments">
-          ${comments.map(c => `<div class="cmt-row"><span class="cmt-name">${esc(c.name || "名無し")}</span> ${esc(c.text || "")}</div>`).join("")}
+          ${comments.map(c => `<div class="cmt-row">
+            <span class="cmt-name">${esc(c.name || "名無し")}</span> <span class="cmt-text">${esc(c.text || "")}</span>
+            ${c.created ? `<span class="cmt-date">${esc(postDateLabel({ created: c.created }))}</span>` : ""}
+            <span class="cmt-actions">
+              <button class="btn btn-sm p-0 cmt-edit" onclick="editComment('${p.id}', ${c.created || 0})" title="コメントを編集">✎</button>
+              <button class="btn btn-sm p-0 cmt-del" onclick="deleteComment('${p.id}', ${c.created || 0})" title="コメントを削除">🗑</button>
+            </span>
+          </div>`).join("")}
           <div class="cmt-add">
             <input type="text" class="form-control form-control-sm" id="cmt-${p.id}" placeholder="コメントで応援…" maxlength="300">
             <button class="btn btn-outline-pk btn-sm" onclick="submitComment('${p.id}')">送信</button>
@@ -1490,6 +1504,45 @@ async function deletePost(postId) {
     if (!data.ok) throw new Error(data.error || "server error");
     applyServerData(data); renderPosts();
   } catch (e) { console.warn("deletePost failed", e); alert("削除に失敗しました。通信環境を確認してもう一度お試しください。"); }
+}
+
+async function editPost(postId) {
+  const post = (serverPosts || []).find(p => p.id === postId);
+  const cur = post ? (post.comment || "") : "";
+  const next = prompt("コメントを編集", cur);
+  if (next === null) return; // キャンセル
+  try {
+    const res = await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ action: "editPost", postId, comment: next.trim() }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "server error");
+    applyServerData(data); renderPosts();
+  } catch (e) { console.warn("editPost failed", e); alert("編集に失敗しました。通信環境を確認してもう一度お試しください。"); }
+}
+
+async function editComment(postId, cid) {
+  const post = (serverPosts || []).find(p => p.id === postId);
+  const c = post && (post.comments || []).find(x => (x.created || 0) === cid);
+  const cur = c ? (c.text || "") : "";
+  const next = prompt("コメントを編集", cur);
+  if (next === null) return;
+  const text = next.trim();
+  if (!text) { alert("空にはできません。消す場合は🗑ボタンを使ってください。"); return; }
+  try {
+    const res = await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ action: "editComment", postId, cid, text }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "server error");
+    applyServerData(data); renderPosts();
+  } catch (e) { console.warn("editComment failed", e); alert("コメントの編集に失敗しました。"); }
+}
+
+async function deleteComment(postId, cid) {
+  if (!confirm("このコメントを削除しますか？")) return;
+  try {
+    const res = await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ action: "deleteComment", postId, cid }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "server error");
+    applyServerData(data); renderPosts();
+  } catch (e) { console.warn("deleteComment failed", e); alert("コメントの削除に失敗しました。"); }
 }
 
 async function submitComment(postId) {

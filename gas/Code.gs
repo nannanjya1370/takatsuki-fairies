@@ -252,6 +252,51 @@ function doPost(e) {
       return json_(payload_(ss));
     }
 
+    // 練習の様子: 投稿のコメント本文を編集
+    if (body.action === "editPost") {
+      var ePostId = String(body.postId || "");
+      var eComment = String(body.comment || "").slice(0, 500);
+      if (!ePostId) return json_({ ok: false, error: "bad request" });
+      var esheet = postsSheet_(ss);
+      var eRow = findPostRow_(esheet, ePostId);
+      if (eRow < 0) return json_({ ok: false, error: "post not found" });
+      esheet.getRange(eRow, 4).setValue(eComment); // comment列
+      return json_(payload_(ss));
+    }
+
+    // 練習の様子: コメントを編集（created値で対象を特定）
+    if (body.action === "editComment") {
+      var ecPostId = String(body.postId || "");
+      var ecCid = Number(body.cid) || 0;
+      var ecText = String(body.text || "").slice(0, 300);
+      if (!ecPostId || !ecText) return json_({ ok: false, error: "bad request" });
+      var ecsheet = postsSheet_(ss);
+      var ecRow = findPostRow_(ecsheet, ecPostId);
+      if (ecRow < 0) return json_({ ok: false, error: "post not found" });
+      var ecComments = parseJson_(ecsheet.getRange(ecRow, 7).getValue(), []);
+      var ecHit = false;
+      for (var ec = 0; ec < ecComments.length; ec++) {
+        if ((Number(ecComments[ec].created) || 0) === ecCid) { ecComments[ec].text = ecText; ecHit = true; break; }
+      }
+      if (!ecHit) return json_({ ok: false, error: "comment not found" });
+      ecsheet.getRange(ecRow, 7).setValue(JSON.stringify(ecComments));
+      return json_(payload_(ss));
+    }
+
+    // 練習の様子: コメントを削除（created値で対象を特定）
+    if (body.action === "deleteComment") {
+      var dcPostId = String(body.postId || "");
+      var dcCid = Number(body.cid) || 0;
+      if (!dcPostId) return json_({ ok: false, error: "bad request" });
+      var dcsheet = postsSheet_(ss);
+      var dcRow = findPostRow_(dcsheet, dcPostId);
+      if (dcRow < 0) return json_({ ok: false, error: "post not found" });
+      var dcComments = parseJson_(dcsheet.getRange(dcRow, 7).getValue(), []);
+      var dcNext = dcComments.filter(function (c) { return (Number(c.created) || 0) !== dcCid; });
+      dcsheet.getRange(dcRow, 7).setValue(JSON.stringify(dcNext));
+      return json_(payload_(ss));
+    }
+
     // 練習の様子: 投稿を削除（写真もDriveからゴミ箱へ）
     if (body.action === "deletePost") {
       var dPostId = String(body.postId || "");
