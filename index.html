@@ -501,7 +501,7 @@ function vsCount(a, b) { return state.vsCounts[pairKey(a, b)] || 0; }
 function courtSize(fmt) { return fmt === "doubles" ? 4 : 2; }
 function rankOf(m) { return RANKS.find(r => (m.attendCount || 0) >= r.min) || null; }
 function today() { return new Date().toISOString().slice(0, 10); }
-function todayLabel() { const d = new Date(); return (d.getMonth() + 1) + "/" + d.getDate(); } // 参加者ラベル用の実日付
+function todayLabel() { const d = new Date(); const wd = "日月火水木金土"[d.getDay()]; return (d.getMonth() + 1) + "/" + d.getDate() + "(" + wd + ")"; } // 参加者ラベル用の実日付（サイトを開いた日）
 
 // ================= メンバー管理 =================
 function addMember() {
