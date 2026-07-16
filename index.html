@@ -151,6 +151,23 @@
     background: #fff8fa; border: 1px solid #ffeef4; border-radius: 8px;
     padding: 4px 8px; font-size: .75rem; margin-top: 5px; color: #59344a;
   }
+  /* 練習の様子（写真・コメント・応援） */
+  .post-form { background: #fff8fa; border: 1px solid #ffeef4; border-radius: 10px; padding: 10px; margin-bottom: 14px; }
+  .post-card { border: 1px solid var(--pk-border); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; background: #fff; box-shadow: 0 2px 6px rgba(240,101,149,.08); }
+  .post-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .post-author { font-weight: 800; color: var(--pk-deep); }
+  .post-date { font-size: .72rem; color: #b08698; margin-left: auto; }
+  .post-photo { width: 100%; border-radius: 10px; margin: 6px 0; display: block; background: #fff0f5; }
+  .post-comment { color: #59344a; white-space: pre-wrap; word-break: break-word; }
+  .post-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+  .cheer-btn { font-size: .8rem; padding: 2px 12px; font-weight: 700; }
+  .cheer-on { background: var(--pk-strong) !important; color: #fff !important; border-color: var(--pk-strong) !important; }
+  .cheer-names { font-size: .72rem; color: #b08698; }
+  .post-comments { margin-top: 8px; border-top: 1px dashed var(--pk-border); padding-top: 6px; }
+  .cmt-row { font-size: .8rem; color: #59344a; padding: 3px 0; }
+  .cmt-name { font-weight: 700; color: var(--pk-deep); }
+  .cmt-add { display: flex; gap: 6px; margin-top: 6px; }
+  .photo-preview { max-width: 100%; border-radius: 8px; margin-top: 8px; display: none; }
   @media (min-width: 992px) {
     .side-sticky { position: sticky; top: 12px; }
   }
@@ -212,7 +229,7 @@
         <span class="ms-auto align-self-center small text-muted">参加: <b id="attend-count">0</b>人</span>
       </div>
       <div id="member-list"></div>
-      <div class="rank-legend">会員ランク（参加回数）：🥈 シルバー（1〜14回）／ 🥇 ゴールド（15〜29回）／ 💎 ダイヤモンド（30回〜）</div>
+      <div class="rank-legend">会員ランク（参加回数）：🥈 シルバー（1〜5回）／ 🥇 ゴールド（6〜12回）／ 💎 ダイヤモンド（13回〜）</div>
     </div>
   </div>
 
@@ -259,6 +276,24 @@
     <div class="card-body" id="history-wrap" style="display:none">
       <div class="small text-muted mb-2">記録した試合のスコアを直すと、全員のレート・妖精ポイントが自動で再計算されます。誤った試合は削除もできます。</div>
       <div id="history-body"></div>
+    </div>
+  </div>
+
+  <!-- 練習の様子（写真・コメント・応援） -->
+  <div class="card">
+    <div class="card-header">📸 練習の様子 <small class="opacity-75">（参加者は写真・コメント投稿／参加できなかった人も応援できます）</small></div>
+    <div class="card-body">
+      <div id="post-identity" class="mb-2"></div>
+      <div class="post-form">
+        <textarea id="post-comment" class="form-control form-control-sm mb-2" rows="2" placeholder="今日の練習の一言コメント（例：ダブルス白熱しました！）" maxlength="500"></textarea>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <input type="file" id="post-photo" accept="image/*" class="form-control form-control-sm" style="max-width:220px" onchange="onPhotoSelected(this)">
+          <button class="btn btn-main btn-sm" onclick="submitPost()" id="post-submit-btn">投稿する</button>
+          <span class="small text-muted" id="post-status"></span>
+        </div>
+        <img id="photo-preview" class="photo-preview" alt="プレビュー">
+      </div>
+      <div id="post-feed"></div>
     </div>
   </div>
 
@@ -358,8 +393,8 @@ function ratingDelta(rA, rB, sa, sb) {
   return Math.round(K_FACTOR * (1 + movBonus) * ((aWon ? 1 : 0) - expectedA));
 }
 const RANKS = [
-  { min: 30, name: "ダイヤモンド", cls: "rank-diamond", icon: "💎" },
-  { min: 15, name: "ゴールド",     cls: "rank-gold", icon: "🥇" },
+  { min: 13, name: "ダイヤモンド", cls: "rank-diamond", icon: "💎" },
+  { min: 6,  name: "ゴールド",     cls: "rank-gold", icon: "🥇" },
   { min: 1,  name: "シルバー",     cls: "rank-silver", icon: "🥈" },
 ];
 
@@ -404,6 +439,8 @@ let state = {
 let openSched = new Set(); // 回答一覧を開いている日程のindex
 let serverVotes = null;    // オンラインモード時のサーバー上の全投票 { "YYYY-MM-DD": { 名前: "yes"|"no" } }
 let serverMembers = [];    // オンラインモード時のサーバー上のメンバー名簿 [名前]
+let serverPosts = [];      // 練習の様子の投稿 [{id,date,name,comment,photo,cheers:[],comments:[]}]
+let pendingPhoto = null;   // 投稿予定の圧縮済み写真（dataURL）
 let syncStatus = "";       // "" | "loading" | "ok" | "error"
 let session = { playCount: {} }; // ページを開いてからの出場回数（休憩の公平化用）
 let courtFormats = ["doubles", "doubles", "doubles"]; // コートごとの形式（UI選択を保持）
@@ -622,6 +659,7 @@ function setVoterName(v) {
 function applyServerData(data) {
   serverVotes = data.votes || {};
   serverMembers = data.members || [];
+  if (Array.isArray(data.posts)) serverPosts = data.posts;
 }
 
 async function fetchVotes() {
@@ -684,6 +722,7 @@ async function fetchVotes() {
     syncStatus = "error";
   }
   renderSchedule();
+  renderPosts();
 }
 
 // メンバー・成績などの共有データをサーバーへ保存（変更のたびに呼ぶ）
@@ -1297,12 +1336,160 @@ function resetAll() {
   location.reload();
 }
 
+// ================= 練習の様子（写真・コメント・応援） =================
+function setPostName(v) {
+  localStorage.setItem(VOTER_NAME_KEY, (v || "").trim().slice(0, 20));
+  renderPostIdentity(); renderSchedule();
+}
+
+function renderPostIdentity() {
+  const el = document.getElementById("post-identity");
+  if (!el) return;
+  const me = myVoterName();
+  if (serverMembers.length) {
+    el.innerHTML = `
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <span class="small text-muted">あなたの名前:</span>
+        <select class="form-select form-select-sm" style="max-width:200px" onchange="setPostName(this.value)">
+          <option value="">選択…</option>
+          ${serverMembers.map(n => `<option value="${esc(n)}" ${n === me ? "selected" : ""}>${esc(n)}</option>`).join("")}
+        </select>
+      </div>`;
+  } else {
+    el.innerHTML = `<div class="small text-muted">メンバー名簿を同期中です…</div>`;
+  }
+}
+
+function postDateLabel(p) {
+  if (p.date && /^\d{4}-\d{2}-\d{2}$/.test(p.date)) return schedLabel(p.date);
+  if (p.created) { const d = new Date(p.created); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`; }
+  return "";
+}
+
+function renderPosts() {
+  renderPostIdentity();
+  const feed = document.getElementById("post-feed");
+  if (!feed) return;
+  if (!SYNC_URL) { feed.innerHTML = `<p class="text-muted small mb-0">オンライン共有が未設定のため、練習の様子は利用できません。</p>`; return; }
+  const posts = serverPosts || [];
+  if (!posts.length) { feed.innerHTML = `<p class="text-muted small mb-0">まだ投稿がありません。練習の写真や一言をぜひシェアしてください📸</p>`; return; }
+  const me = myVoterName();
+  feed.innerHTML = posts.map(p => {
+    const cheers = p.cheers || [];
+    const cheered = me && cheers.includes(me);
+    const comments = p.comments || [];
+    return `
+      <div class="post-card">
+        <div class="post-head">
+          <span class="post-author">${esc(p.name || "名無し")}</span>
+          <span class="post-date">${esc(postDateLabel(p))}</span>
+        </div>
+        ${p.photo ? `<img class="post-photo" src="${esc(p.photo)}" alt="練習写真" loading="lazy">` : ""}
+        ${p.comment ? `<div class="post-comment">${esc(p.comment)}</div>` : ""}
+        <div class="post-actions">
+          <button class="btn btn-outline-pk btn-sm cheer-btn ${cheered ? "cheer-on" : ""}" onclick="toggleCheer('${p.id}')">💪 がんばれ${cheers.length ? ` ${cheers.length}` : ""}</button>
+          ${cheers.length ? `<span class="cheer-names">${esc(cheers.join("・"))}</span>` : ""}
+        </div>
+        <div class="post-comments">
+          ${comments.map(c => `<div class="cmt-row"><span class="cmt-name">${esc(c.name || "名無し")}</span> ${esc(c.text || "")}</div>`).join("")}
+          <div class="cmt-add">
+            <input type="text" class="form-control form-control-sm" id="cmt-${p.id}" placeholder="コメントで応援…" maxlength="300">
+            <button class="btn btn-outline-pk btn-sm" onclick="submitComment('${p.id}')">送信</button>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// 端末側で写真を縮小してから送る（アップロードとサーバー保存を軽くする）
+function onPhotoSelected(input) {
+  const file = input.files && input.files[0];
+  const preview = document.getElementById("photo-preview");
+  if (!file) { pendingPhoto = null; preview.style.display = "none"; return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 1280;
+      let width = img.width, height = img.height;
+      if (width > max || height > max) {
+        const r = Math.min(max / width, max / height);
+        width = Math.round(width * r); height = Math.round(height * r);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      pendingPhoto = canvas.toDataURL("image/jpeg", 0.72);
+      preview.src = pendingPhoto; preview.style.display = "block";
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function submitPost() {
+  if (!SYNC_URL) { alert("オンライン共有が未設定です"); return; }
+  const name = myVoterName();
+  if (!name) { alert("先にあなたの名前を選んでください"); return; }
+  const comment = document.getElementById("post-comment").value.trim();
+  if (!comment && !pendingPhoto) { alert("写真かコメントのどちらかを入力してください"); return; }
+  const btn = document.getElementById("post-submit-btn");
+  const status = document.getElementById("post-status");
+  btn.disabled = true; status.textContent = "送信中…";
+  try {
+    const res = await fetch(SYNC_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "addPost", name, comment, date: today(), photo: pendingPhoto || "" }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "server error");
+    applyServerData(data);
+    document.getElementById("post-comment").value = "";
+    document.getElementById("post-photo").value = "";
+    document.getElementById("photo-preview").style.display = "none";
+    pendingPhoto = null;
+    status.textContent = "投稿しました！";
+    renderPosts();
+    setTimeout(() => { status.textContent = ""; }, 3000);
+  } catch (e) {
+    console.warn("addPost failed", e);
+    status.textContent = "送信に失敗しました";
+    alert("投稿の送信に失敗しました。通信環境を確認してもう一度お試しください。");
+  } finally { btn.disabled = false; }
+}
+
+async function toggleCheer(postId) {
+  const name = myVoterName();
+  if (!name) { alert("先にあなたの名前を選んでください"); return; }
+  try {
+    const res = await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ action: "cheer", postId, name }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "server error");
+    applyServerData(data); renderPosts();
+  } catch (e) { console.warn("cheer failed", e); alert("応援の送信に失敗しました。"); }
+}
+
+async function submitComment(postId) {
+  const name = myVoterName();
+  if (!name) { alert("先にあなたの名前を選んでください"); return; }
+  const input = document.getElementById("cmt-" + postId);
+  const text = (input.value || "").trim();
+  if (!text) return;
+  try {
+    const res = await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ action: "postComment", postId, name, text }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "server error");
+    applyServerData(data); renderPosts();
+  } catch (e) { console.warn("comment failed", e); alert("コメントの送信に失敗しました。"); }
+}
+
 // ================= 初期化 =================
 document.getElementById("new-name").addEventListener("keydown", e => {
   if (e.key === "Enter") addMember();
 });
 load();
 renderMembers();
+renderPosts();
 renderFormatRows();
 if (state.currentMatches) renderMatches(); // 前回表示していた対戦表を復元
 fetchVotes(); // 共有データ（メンバー・成績・対戦表・投票）をサーバーから取得。サーバーが空なら初回共有
