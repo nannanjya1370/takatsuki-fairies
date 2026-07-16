@@ -270,15 +270,6 @@
     <div class="card-body" id="matches-area"></div>
   </div>
 
-  <!-- 過去の戦績（記録した試合のスコア修正・削除） -->
-  <div class="card">
-    <div class="card-header" style="cursor:pointer" onclick="toggleHistory()">📋 過去の戦績（スコア修正・削除）<span class="float-end" id="history-caret">▼</span></div>
-    <div class="card-body" id="history-wrap" style="display:none">
-      <div class="small text-muted mb-2">記録した試合のスコアを直すと、全員のレート・妖精ポイントが自動で再計算されます。誤った試合は削除もできます。</div>
-      <div id="history-body"></div>
-    </div>
-  </div>
-
   <!-- 練習の様子（写真・コメント・応援） -->
   <div class="card">
     <div class="card-header">📸 練習の様子 <small class="opacity-75">（参加者は写真・コメント投稿／参加できなかった人も応援できます）</small></div>
@@ -294,6 +285,15 @@
         <img id="photo-preview" class="photo-preview" alt="プレビュー">
       </div>
       <div id="post-feed"></div>
+    </div>
+  </div>
+
+  <!-- 過去の戦績（記録した試合のスコア修正・削除） -->
+  <div class="card">
+    <div class="card-header" style="cursor:pointer" onclick="toggleHistory()">📋 過去の戦績（スコア修正・削除）<span class="float-end" id="history-caret">▼</span></div>
+    <div class="card-body" id="history-wrap" style="display:none">
+      <div class="small text-muted mb-2">記録した試合のスコアを直すと、全員のレート・妖精ポイントが自動で再計算されます。誤った試合は削除もできます。</div>
+      <div id="history-body"></div>
     </div>
   </div>
 
