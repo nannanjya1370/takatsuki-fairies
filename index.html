@@ -459,6 +459,32 @@ let courtFormats = ["doubles", "doubles", "doubles"]; // コートごとの形�
 
 function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
+// 「とくにょにょうや」のテスト重複アカウントを自動掃除する。
+// 本人アカウントは isOwner フラグで保護し、名前を編集して変えても残す。
+// それ以外で名前に「とくにょにょうや」を含むものは（今後出現しても）削除する。
+const OWNER_KEY = "とくにょにょうや";
+function cleanupOwnerDuplicates(s) {
+  const list = s.members || [];
+  let owner = list.find(m => m.isOwner);
+  if (!owner) {
+    // 初回：現行の本人アカウント（「雨上がりのそよ風」を含む とくにょにょうや）に印を付ける
+    owner = list.find(m => (m.name || "").includes(OWNER_KEY) && (m.name || "").includes("雨上がりのそよ風"))
+         || list.find(m => (m.name || "").includes(OWNER_KEY));
+    if (owner) owner.isOwner = true;
+  }
+  const dropIds = new Set();
+  for (const m of list) {
+    if (m === owner || m.isOwner) continue;
+    if ((m.name || "").includes(OWNER_KEY)) dropIds.add(m.id);
+  }
+  if (!dropIds.size) return false;
+  s.members = list.filter(m => !dropIds.has(m.id));
+  for (const date in (s.attendVotes || {})) {
+    for (const id of dropIds) delete s.attendVotes[date][id]; // 削除メンバーの投票も掃除
+  }
+  return true;
+}
+
 // 旧バージョン・サーバー由来のデータに不足フィールドを補完して正規化する
 function normalizeLoadedState(s) {
   s = Object.assign({
@@ -528,6 +554,8 @@ function normalizeLoadedState(s) {
       }
     }
   }
+  // 「とくにょにょうや」のテスト重複アカウントを掃除（本人は保護）
+  cleanupOwnerDuplicates(s);
   // nextIdの整合性を保証（ID重複によるデータ破損を防ぐ）
   const maxId = s.members.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
   if (!s.nextId || s.nextId <= maxId) s.nextId = maxId + 1;
@@ -729,6 +757,8 @@ async function fetchVotes() {
       state.matchLogSeq = seq;
       state.deletedLogs = [...delSet];
       if (merged.length !== serverLogLen) changed++;
+      // 合流時に紛れ込んだ「とくにょにょうや」テスト重複を掃除（本人は保護）
+      if (cleanupOwnerDuplicates(state)) changed++;
       // 成績・レート・対戦数・ポイントをマージ後のログから再計算してそろえる
       recomputeFromLog();
       save(); renderMembers();
