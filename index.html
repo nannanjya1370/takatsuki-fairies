@@ -459,24 +459,60 @@ let courtFormats = ["doubles", "doubles", "doubles"]; // コートごとの形�
 
 function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
-// 「とくにょにょうや」のテスト重複アカウントを自動掃除する。
-// 本人アカウントは isOwner フラグで保護し、名前を編集して変えても残す。
-// それ以外で名前に「とくにょにょうや」を含むものは（今後出現しても）削除する。
+// 名前から「基本名」を取り出す（最初の絵文字より前の部分）。同じ基本名は同一人物とみなす。
+// 例: 「とくにょにょうや🍃雨上がりのそよ風」→「とくにょにょうや」／「平悠矢」→「平悠矢」
+function baseNameKey(name) {
+  const s = String(name || "").normalize("NFKC");
+  const m = s.match(/\p{Extended_Pictographic}/u); // 最初の絵文字の位置
+  const head = m ? s.slice(0, m.index) : s;
+  return head.replace(/\s+/g, "").trim();
+}
+
+// 重複アカウントを自動掃除する（全メンバー・今後の新メンバーにも適用）。
+// ・同じ基本名（絵文字/称号を除いた先頭）のメンバーは同一人物とみなし、代表1件だけ残す。
+// ・代表は isCanonical フラグで保護するので、名前を編集して変えても残る。
+// ・「とくにょにょうや」を含む本人以外のアカウントは、改名後の紛れ込みも含め常に削除する。
 const OWNER_KEY = "とくにょにょうや";
-function cleanupOwnerDuplicates(s) {
+function cleanupDuplicates(s) {
   const list = s.members || [];
-  let owner = list.find(m => m.isOwner);
-  if (!owner) {
-    // 初回：現行の本人アカウント（「雨上がりのそよ風」を含む とくにょにょうや）に印を付ける
-    owner = list.find(m => (m.name || "").includes(OWNER_KEY) && (m.name || "").includes("雨上がりのそよ風"))
-         || list.find(m => (m.name || "").includes(OWNER_KEY));
-    if (owner) owner.isOwner = true;
+  if (!list.length) return false;
+  const act = m => (m.games || 0) + (m.wins || 0) + (m.attendCount || 0) + (m.points || 0);
+
+  // 本人（isOwner）を1件だけに保つ。未設定なら現行の本人アカウントに印を付ける
+  let owners = list.filter(m => m.isOwner);
+  if (!owners.length) {
+    const owner = list.find(m => (m.name || "").includes(OWNER_KEY) && (m.name || "").includes("雨上がりのそよ風"))
+               || list.find(m => (m.name || "").includes(OWNER_KEY));
+    if (owner) { owner.isOwner = true; owner.isCanonical = true; owners = [owner]; }
+  } else if (owners.length > 1) {
+    owners.sort((a, b) => act(b) - act(a) || (a.id || 0) - (b.id || 0));
+    owners.slice(1).forEach(m => m.isOwner = false); // 同期の行き違いで複数付いても代表へ集約
   }
+
   const dropIds = new Set();
+
+  // 1) 基本名でグループ化し、代表1件だけ残す（他は削除）
+  const groups = new Map();
   for (const m of list) {
-    if (m === owner || m.isOwner) continue;
+    const k = baseNameKey(m.name);
+    if (!k) continue;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(m);
+  }
+  for (const group of groups.values()) {
+    // 代表を決める：本人/既存の代表印を優先 → 活動量が多い → 若いID
+    group.sort((a, b) => (Number(b.isOwner || b.isCanonical) - Number(a.isOwner || a.isCanonical))
+                      || act(b) - act(a) || (a.id || 0) - (b.id || 0));
+    group[0].isCanonical = true;
+    for (let i = 1; i < group.length; i++) dropIds.add(group[i].id);
+  }
+
+  // 2) 改名後の紛れ込み対策：「とくにょにょうや」を含む本人以外は常に削除
+  for (const m of list) {
+    if (m.isOwner) continue;
     if ((m.name || "").includes(OWNER_KEY)) dropIds.add(m.id);
   }
+
   if (!dropIds.size) return false;
   s.members = list.filter(m => !dropIds.has(m.id));
   for (const date in (s.attendVotes || {})) {
@@ -554,8 +590,8 @@ function normalizeLoadedState(s) {
       }
     }
   }
-  // 「とくにょにょうや」のテスト重複アカウントを掃除（本人は保護）
-  cleanupOwnerDuplicates(s);
+  // 重複アカウントを掃除（基本名で同一人物を統合／本人・代表は保護）
+  cleanupDuplicates(s);
   // nextIdの整合性を保証（ID重複によるデータ破損を防ぐ）
   const maxId = s.members.reduce((mx, m) => Math.max(mx, m.id || 0), 0);
   if (!s.nextId || s.nextId <= maxId) s.nextId = maxId + 1;
@@ -757,8 +793,8 @@ async function fetchVotes() {
       state.matchLogSeq = seq;
       state.deletedLogs = [...delSet];
       if (merged.length !== serverLogLen) changed++;
-      // 合流時に紛れ込んだ「とくにょにょうや」テスト重複を掃除（本人は保護）
-      if (cleanupOwnerDuplicates(state)) changed++;
+      // 合流時に紛れ込んだ重複を掃除（基本名で同一人物を統合／本人・代表は保護）
+      if (cleanupDuplicates(state)) changed++;
       // 成績・レート・対戦数・ポイントをマージ後のログから再計算してそろえる
       recomputeFromLog();
       save(); renderMembers();
