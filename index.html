@@ -245,7 +245,7 @@
         <span class="ms-auto align-self-center small text-muted">参加: <b id="attend-count">0</b>人</span>
       </div>
       <div id="member-list"></div>
-      <div class="member-pref-legend">🏸 <b>ダ</b>＝ダブルス／<b>シ</b>＝シングルス希望（両方チェックで「どちらでもOK」）。<b>休</b>＝今回は休憩（試合に入りません）。組み合わせは希望に沿って自動作成されます。</div>
+      <div class="member-pref-legend">🏸 練習ごとに希望をチェック（初期状態は全部オフ）。<b>ダ</b>＝ダブルス／<b>シ</b>＝シングルス希望（両方チェックで「どちらでもOK」）。<b>休</b>＝今回は休憩。<b>ダ・シが未チェックの人は試合に入りません。</b>組み合わせは希望に沿って自動作成されます。</div>
       <div class="rank-legend">会員ランク（参加回数）：🥈 シルバー（1〜5回）／ 🥇 ゴールド（6〜12回）／ 💎 ダイヤモンド（13回〜）</div>
     </div>
   </div>
@@ -535,15 +535,20 @@ function normalizeLoadedState(s) {
     members: [], togetherCounts: {}, vsCounts: {},
     attendVotes: {}, voterId: null, pointsV2: false, pointsV3: false, pointsV4: false, pointsV5: false,
     matchLog: [], matchLogSeq: 0, deletedLogs: [], nextId: 1,
-    currentMatches: null,
+    currentMatches: null, prefOptInV1: false,
   }, s);
   s.members.forEach(m => {
     if (m.attendCount === undefined) m.attendCount = 0;
     if (m.lastAttend === undefined) m.lastAttend = "";
     if (m.points === undefined) m.points = 0;
-    if (m.playPref === undefined) m.playPref = "both"; // その日の希望種目（both/doubles/singles）
+    if (m.playPref === undefined) m.playPref = "none"; // その日の希望種目（none/both/doubles/singles）
     if (m.rest === undefined) m.rest = false;          // 今回は休憩フラグ
   });
+  // 希望種目・休憩は「毎回チェックし直す」方式へ移行。旧データの既定チェックを一度だけ全解除する
+  if (!s.prefOptInV1) {
+    s.members.forEach(m => { m.playPref = "none"; m.rest = false; });
+    s.prefOptInV1 = true;
+  }
   // 旧データ（1pt単位）を100pt単位へ換算
   if (!s.pointsV2) {
     s.members.forEach(m => m.points = (m.points || 0) * 100);
@@ -644,7 +649,7 @@ function addMember() {
   state.members.push({
     id: state.nextId++, name, rating: INITIAL_RATING,
     games: 0, wins: 0, attend: true, attendCount: 0, lastAttend: "", points: 0,
-    playPref: "both", rest: false,
+    playPref: "none", rest: false,
   });
   input.value = "";
   save(); renderMembers(); pushState();
@@ -703,15 +708,14 @@ function toggleAttend(id) {
 }
 
 // その日の希望種目を切り替える（ダ／シのチェックの組み合わせで pref を決める）
-// 「ダ」と「シ」の両方チェック＝どちらでもOK。最低どちらか1つは残す（両方オフは不可）
+// 「ダ」と「シ」の両方チェック＝どちらでもOK。両方オフ＝未選択（none）＝試合に入らない
 function setPlayPref(id, fmt) {
   const m = member(id);
-  const pref = m.playPref || "both";
+  const pref = m.playPref || "none";
   let dOn = pref === "both" || pref === "doubles";
   let sOn = pref === "both" || pref === "singles";
   if (fmt === "doubles") dOn = !dOn; else sOn = !sOn;
-  if (!dOn && !sOn) { renderMembers(); return; } // 両方オフにはできない（表示を元に戻す）
-  m.playPref = dOn && sOn ? "both" : dOn ? "doubles" : "singles";
+  m.playPref = dOn && sOn ? "both" : dOn ? "doubles" : sOn ? "singles" : "none";
   save(); renderMembers(); pushState();
 }
 
@@ -735,7 +739,7 @@ function renderMembers() {
     wrap.innerHTML = state.members.map(m => {
       const rank = rankOf(m); // 名前の横に会員ランク（🥈🥇💎）を表示
       const rankIcon = rank ? ` <span title="${rank.name}">${rank.icon}</span>` : "";
-      const pref = m.playPref || "both";
+      const pref = m.playPref || "none";
       const dOn = pref === "both" || pref === "doubles";
       const sOn = pref === "both" || pref === "singles";
       return `
@@ -1080,21 +1084,21 @@ function generateMatches() {
   const warnEl = document.getElementById("gen-warning");
   warnEl.innerHTML = "";
   const attendees = state.members.filter(m => m.attend).map(m => m.id);
+  const prefOf = id => (member(id).playPref || "none");
   const forcedRest = state.members.filter(m => m.attend && m.rest).map(m => m.id); // 休憩を選んだ人
-  const playable = state.members.filter(m => m.attend && !m.rest).map(m => m.id);  // 試合に出られる人
+  const noPick = state.members.filter(m => m.attend && !m.rest && prefOf(m.id) === "none").map(m => m.id); // ダ・シ未選択
+  const available = state.members.filter(m => m.attend && !m.rest && prefOf(m.id) !== "none").map(m => m.id); // 試合に出られる人
   const wantedFormats = courtFormats.slice(0, courtCount());
-  const wantedTotal = wantedFormats.reduce((s, f) => s + courtSize(f), 0);
-  const prefOf = id => (member(id).playPref || "both");
 
   // 希望（ダ／シ）と人数に合わせてコート構成を決定
-  const chosen = chooseCourts(wantedFormats, playable, prefOf);
+  const chosen = chooseCourts(wantedFormats, available, prefOf);
   if (!chosen) {
-    warnEl.innerHTML = `<div class="alert alert-danger py-2 mb-0">試合に出られる参加者が${playable.length}人では、選んだコート形式で1面も組めません。<br>コート形式（ダブルス／シングルス）とメンバーの希望（ダ・シ・休）を見直してください。</div>`;
+    warnEl.innerHTML = `<div class="alert alert-danger py-2 mb-0">試合に出られる参加者が${available.length}人では、選んだコート形式で1面も組めません。<br>各メンバーの「ダ（ダブルス）／シ（シングルス）」にチェックが入っているか、コート形式を見直してください。</div>`;
     return;
   }
   const { activeFormats, dSlots, sSlots } = chosen;
   if (activeFormats.length < wantedFormats.length) {
-    warnEl.innerHTML = `<div class="alert alert-warning py-2 mb-0">⚠️ 出られる${playable.length}人の希望内訳では${wantedFormats.length}面すべては組めないため、<b>${activeFormats.length}面</b>で生成しました（人数・希望の都合）。</div>`;
+    warnEl.innerHTML = `<div class="alert alert-warning py-2 mb-0">⚠️ 出られる${available.length}人の希望内訳では${wantedFormats.length}面すべては組めないため、<b>${activeFormats.length}面</b>で生成しました（人数・希望の都合）。</div>`;
   }
 
   // 参加回数カウント＋参加ポイント付与（同じ日は1回のみ）→ 会員ランク・ランキングに反映
@@ -1110,9 +1114,9 @@ function generateMatches() {
   }
 
   // 希望どおりにダブルス/シングルスの出場グループへ振り分け（出場回数の少ない人を優先）
-  const dFair = byFair(playable.filter(id => prefOf(id) === "doubles"));
-  const sFair = byFair(playable.filter(id => prefOf(id) === "singles"));
-  const bFair = byFair(playable.filter(id => prefOf(id) === "both"));
+  const dFair = byFair(available.filter(id => prefOf(id) === "doubles"));
+  const sFair = byFair(available.filter(id => prefOf(id) === "singles"));
+  const bFair = byFair(available.filter(id => prefOf(id) === "both"));
   const doublesGroup = [], singlesGroup = [];
   let di = 0, si = 0;
   while (doublesGroup.length < dSlots && di < dFair.length) doublesGroup.push(dFair[di++]);
@@ -1122,8 +1126,8 @@ function generateMatches() {
     const id = bFair[bi++];
     if (doublesGroup.length < dSlots) doublesGroup.push(id); else singlesGroup.push(id);
   }
-  // 出場からあぶれた人＋休憩を選んだ人が休憩
-  const resting = [...forcedRest, ...dFair.slice(di), ...sFair.slice(si), ...bFair.slice(bi)];
+  // 出場からあぶれた人＋休憩を選んだ人＋ダ・シ未選択の人が休憩
+  const resting = [...forcedRest, ...noPick, ...dFair.slice(di), ...sFair.slice(si), ...bFair.slice(bi)];
 
   // ★特殊ルール: 約30%でMIX戦（ハンデ戦）
   const mix = Math.random() < 0.3;
@@ -1447,7 +1451,7 @@ function resetMatches() {
 function endPractice() {
   if (!confirm("本日の練習を終了しますか？\n対戦表を片付け、参加チェックを外します（成績・妖精ポイントはそのまま残ります）。")) return;
   state.currentMatches = null;
-  state.members.forEach(m => { m.attend = false; m.rest = false; }); // 休憩フラグは翌回に持ち越さない
+  state.members.forEach(m => { m.attend = false; m.rest = false; m.playPref = "none"; }); // 希望種目・休憩は毎回チェックし直す
   const card = document.getElementById("matches-card"); if (card) card.style.display = "none";
   save(); renderMembers(); pushState();
   alert("本日もお疲れ様でした！🏸");
