@@ -392,7 +392,7 @@ const STORAGE_KEY = "badminton-pairing-v1";
 const INITIAL_RATING = 1000;
 // 妖精ポイント ＝ レート ＋ 参加回数×50。実力（レート）に参加ボーナスを上乗せする方式。
 // 勝敗はレート（イロ方式）に反映されるので、ポイントへの直接加算はしない。参加は1日1回のみ。
-const ATTEND_POINTS = 200;
+const ATTEND_POINTS = 100;
 // レート変動（イロ方式）に得失点差を控えめに反映する。差が開きすぎないよう上限＋減衰つき。
 const K_FACTOR = 32;      // 基本の変動幅
 const MOV_CLOSE = 2;      // 点差がこれ以下は僅差＝上乗せなし（従来と同じ挙動）
