@@ -1093,7 +1093,7 @@ function renderRanking() {
   // ランキングはPC用（右カラム）とスマホ用（メイン内）の2か所に描画する
   document.querySelectorAll(".ranking-legend").forEach(el => el.innerHTML =
     `妖精ポイント ＝ レート ＋ 参加ボーナス。`
-    + `参加1回＝${ATTEND_POINTS}pt（連続ボーナスなし）。`
+    + `参加1回＝${ATTEND_POINTS}pt。`
     + `🎽 ${SHIRT_COST}pt でシャツと交換。`);
   let html;
   if (state.members.length === 0) {
