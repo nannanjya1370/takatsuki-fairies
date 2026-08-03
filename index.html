@@ -456,7 +456,9 @@ let state = {
 let openSched = new Set(); // 回答一覧を開いている日程のindex
 let serverVotes = null;    // オンラインモード時のサーバー上の全投票 { "YYYY-MM-DD": { 名前: "yes"|"no" } }
 let serverMembers = [];    // オンラインモード時のサーバー上のメンバー名簿 [名前]
-let serverPosts = [];      // 練習の様子の投稿 [{id,date,name,comment,photo,cheers:[],comments:[]}]
+// 練習の様子の投稿。取得失敗時も消えないよう、最後に取得できた内容を端末にキャッシュして初期表示に使う
+const POSTS_CACHE_KEY = "badminton-posts-cache-v1";
+let serverPosts = (() => { try { return JSON.parse(localStorage.getItem(POSTS_CACHE_KEY) || "[]"); } catch (e) { return []; } })();
 let pendingPhoto = null;   // 投稿予定の圧縮済み写真（dataURL）
 let syncStatus = "";       // "" | "loading" | "ok" | "error"
 let unsyncedSince = 0;     // サーバー未送信の結果が出た時刻(ms)。0=すべて送信済み
@@ -827,16 +829,27 @@ function setVoterName(v) {
 function applyServerData(data) {
   serverVotes = data.votes || {};
   serverMembers = data.members || [];
-  if (Array.isArray(data.posts)) serverPosts = data.posts;
+  if (Array.isArray(data.posts)) {
+    serverPosts = data.posts;
+    try { localStorage.setItem(POSTS_CACHE_KEY, JSON.stringify(serverPosts)); } catch (e) {} // 次回の取得失敗に備えて保存
+  }
 }
 
 async function fetchVotes() {
   if (!SYNC_URL) return;
   syncStatus = "loading"; renderSchedule();
   try {
-    const res = await fetch(SYNC_URL);
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "server error");
+    // GASのWebアプリは稀にHTMLのエラーページを返す。1回で諦めると投稿やメンバーが空表示になるので数回リトライする
+    let data = null;
+    for (let i = 0; i < 4; i++) {
+      try {
+        const res = await fetch(SYNC_URL, { cache: "no-store" });
+        const d = await res.json();
+        if (d && d.ok) { data = d; break; }
+      } catch (e) { console.warn("fetchVotes GET attempt " + (i + 1) + " failed", e); }
+      if (i < 3) await new Promise(r => setTimeout(r, 700 * (i + 1)));
+    }
+    if (!data) throw new Error("server unreachable");
     applyServerData(data);
     // メンバー・成績・対戦表などの共有データを取り込む（空データで上書きしない）
     if (data.state && Array.isArray(data.state.members) && data.state.members.length) {
