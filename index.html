@@ -536,7 +536,7 @@ function normalizeLoadedState(s) {
     members: [], togetherCounts: {}, vsCounts: {},
     attendVotes: {}, voterId: null, pointsV2: false, pointsV3: false, pointsV4: false, pointsV5: false,
     matchLog: [], matchLogSeq: 0, deletedLogs: [], nextId: 1,
-    currentMatches: null, prefOptInV1: false,
+    currentMatches: null, prefOptInV1: false, checksDate: "",
   }, s);
   s.members.forEach(m => {
     if (m.attendCount === undefined) m.attendCount = 0;
@@ -551,6 +551,11 @@ function normalizeLoadedState(s) {
   if (!s.prefOptInV1) {
     s.members.forEach(m => { m.playPref = "none"; m.rest = false; });
     s.prefOptInV1 = true;
+  }
+  // 練習が終わったら（＝チェックを付けた日より後に開いたら）参加・希望・休憩のチェックを自動で外す
+  if (s.checksDate && s.checksDate < localTodayIso()) {
+    s.members.forEach(m => { m.attend = false; m.rest = false; m.playPref = "none"; });
+    s.checksDate = "";
   }
   // 妖精ポイントを導出（レート ＋ 参加回数×100 − 交換で消費した分）
   s.members.forEach(m => m.points = pointsOf(m));
@@ -721,9 +726,13 @@ function removeMember(id) {
   save(); renderMembers(); pushState();
 }
 
+// 参加・希望・休憩のチェックを今日つけた印。翌日以降にアプリを開くと自動で外れる（練習ごとのリセット）
+function noteChecksToday() { state.checksDate = localTodayIso(); }
+
 function toggleAttend(id) {
   const m = member(id);
   m.attend = !m.attend;
+  noteChecksToday();
   save(); renderMembers(); pushState();
 }
 
@@ -736,6 +745,7 @@ function setPlayPref(id, fmt) {
   let sOn = pref === "both" || pref === "singles";
   if (fmt === "doubles") dOn = !dOn; else sOn = !sOn;
   m.playPref = dOn && sOn ? "both" : dOn ? "doubles" : sOn ? "singles" : "none";
+  noteChecksToday();
   save(); renderMembers(); pushState();
 }
 
@@ -743,11 +753,13 @@ function setPlayPref(id, fmt) {
 function toggleRest(id) {
   const m = member(id);
   m.rest = !m.rest;
+  noteChecksToday();
   save(); renderMembers(); pushState();
 }
 
 function checkAll(v) {
   state.members.forEach(m => m.attend = v);
+  noteChecksToday();
   save(); renderMembers(); pushState();
 }
 
@@ -1530,6 +1542,7 @@ function endPractice() {
   if (!confirm("本日の練習を終了しますか？\n対戦表を片付け、参加チェックを外します（成績・妖精ポイントはそのまま残ります）。")) return;
   state.currentMatches = null;
   state.members.forEach(m => { m.attend = false; m.rest = false; m.playPref = "none"; }); // 希望種目・休憩は毎回チェックし直す
+  state.checksDate = "";
   const card = document.getElementById("matches-card"); if (card) card.style.display = "none";
   save(); renderMembers(); pushState();
   alert("本日もお疲れ様でした！🏸");
