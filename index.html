@@ -390,9 +390,9 @@
 // ================= データ =================
 const STORAGE_KEY = "badminton-pairing-v1";
 const INITIAL_RATING = 1000;
-// 妖精ポイント ＝ レート ＋ 参加ボーナス。参加は1日1回のみ（1回＝一律+100pt、連続ボーナスなし）。
+// 妖精ポイント ＝ レート ＋ 参加ボーナス。参加は1日1回のみ（1回＝一律+150pt、連続ボーナスなし）。
 // 勝敗はレート（イロ方式）に反映される。
-const ATTEND_POINTS = 100;
+const ATTEND_POINTS = 150;
 const SHIRT_COST = 3000;        // このポイントに達するとシャツ1枚と交換できる（交換は手渡しで運用）
 // レート変動（イロ方式）に得失点差を控えめに反映する。差が開きすぎないよう上限＋減衰つき。
 const K_FACTOR = 32;      // 基本の変動幅
@@ -1093,8 +1093,7 @@ function renderRanking() {
   // ランキングはPC用（右カラム）とスマホ用（メイン内）の2か所に描画する
   document.querySelectorAll(".ranking-legend").forEach(el => el.innerHTML =
     `妖精ポイント ＝ レート ＋ 参加ボーナス。`
-    + `参加1回＝${ATTEND_POINTS}pt。`
-    + `🎽 ${SHIRT_COST}pt でシャツと交換。`);
+    + `参加1回＝${ATTEND_POINTS}pt。`);
   let html;
   if (state.members.length === 0) {
     html = `<p class="text-muted small mb-0">メンバーを追加するとランキングが表示されます</p>`;
