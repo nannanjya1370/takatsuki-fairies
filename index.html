@@ -762,7 +762,6 @@ function renderMembers() {
       const pref = m.playPref || "none";
       const dOn = pref === "both" || pref === "doubles";
       const sOn = pref === "both" || pref === "singles";
-      const pts = pointsOf(m);
       // 今日の参加ポイントが付いている人だけ「参加取消」ボタンを出す
       const cancelBtn = m.lastAttend === today()
         ? `<button class="btn btn-sm btn-outline-warning py-0" onclick="cancelTodayAttend(${m.id})" title="今日の参加を取り消して参加ポイントを戻す">参加取消</button>`
@@ -781,7 +780,7 @@ function renderMembers() {
           <label class="pref-chk" title="今回は休憩（試合に入りません）">
             <input type="checkbox" ${m.rest ? "checked" : ""} onchange="toggleRest(${m.id})">休</label>
         </span>
-        <span class="small text-muted">参加${m.attendCount || 0}回・${m.games}戦${m.wins}勝・${pts}pt</span>
+        <span class="small text-muted">参加${m.attendCount || 0}回・${m.games}戦${m.wins}勝</span>
         ${cancelBtn}
         <button class="btn btn-sm btn-outline-pk py-0" onclick="renameMember(${m.id})">✎</button>
         <button class="btn btn-sm btn-outline-danger py-0" onclick="removeMember(${m.id})">×</button>
