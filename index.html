@@ -390,9 +390,13 @@
 // ================= データ =================
 const STORAGE_KEY = "badminton-pairing-v1";
 const INITIAL_RATING = 1000;
-// 妖精ポイント ＝ レート ＋ 参加回数×50。実力（レート）に参加ボーナスを上乗せする方式。
-// 勝敗はレート（イロ方式）に反映されるので、ポイントへの直接加算はしない。参加は1日1回のみ。
+// 妖精ポイント ＝ レート ＋ 参加ボーナス ＋ 紹介ボーナス。参加は1日1回のみ。
+// 勝敗はレート（イロ方式）に反映される。
 const ATTEND_POINTS = 100;
+const ATTEND_STREAK = 1.2;      // 連続参加ボーナスの倍率
+const STREAK_STEP = 10;         // この連続回数ごとに1回分のポイントが1段階（×1.2）アップ
+const SHIRT_COST = 3000;        // このポイントに達するとシャツ1枚と交換できる（交換は手渡しで運用）
+const REFERRAL_POINTS = 300;    // 友達を1人紹介したときの基本ポイント（会員ランクで倍率がかかる）
 // レート変動（イロ方式）に得失点差を控えめに反映する。差が開きすぎないよう上限＋減衰つき。
 const K_FACTOR = 32;      // 基本の変動幅
 const MOV_CLOSE = 2;      // 点差がこれ以下は僅差＝上乗せなし（従来と同じ挙動）
@@ -458,7 +462,10 @@ let serverMembers = [];    // オンラインモード時のサーバー上の�
 let serverPosts = [];      // 練習の様子の投稿 [{id,date,name,comment,photo,cheers:[],comments:[]}]
 let pendingPhoto = null;   // 投稿予定の圧縮済み写真（dataURL）
 let syncStatus = "";       // "" | "loading" | "ok" | "error"
-let session = { playCount: {} }; // ページを開いてからの出場回数（休憩の公平化用）
+let unsyncedSince = 0;     // サーバー未送信の結果が出た時刻(ms)。0=すべて送信済み
+let pushRetryTimer = null; // 未送信ぶんの自動再送タイマー
+// ページを開いてからの記録。playCount=出場回数（休憩の公平化）、pairCount/vsCount=今日すでに組んだペア/当たった相手（被り回避）
+let session = { playCount: {}, pairCount: {}, vsCount: {} };
 let courtFormats = ["doubles", "doubles", "doubles"]; // コートごとの形式（UI選択を保持）
 // 今回の対戦 {mix, courts:[{format,teamA,teamB,saved}], resting:[ids]} は state.currentMatches として全端末で共有
 
@@ -540,14 +547,20 @@ function normalizeLoadedState(s) {
     if (m.points === undefined) m.points = 0;
     if (m.playPref === undefined) m.playPref = "none"; // その日の希望種目（none/both/doubles/singles）
     if (m.rest === undefined) m.rest = false;          // 今回は休憩フラグ
+    if (m.referrals === undefined) m.referrals = 0;         // 連れてきた新規の人数
+    if (m.refBonus === undefined) m.refBonus = 0;           // 紹介で貯めたボーナスポイントの累計
+    if (m.streak === undefined) m.streak = 0;               // 現在の連続参加回数
+    if (m.attendBonus === undefined) m.attendBonus = (m.attendCount || 0) * ATTEND_POINTS; // 連続ボーナス込みの参加ポイント累計（旧データは一律100ptで初期化）
+    if (m.redeemed === undefined) m.redeemed = 0;           // （将来用）交換で消費したポイント
+    if (m.redeemedShirts === undefined) m.redeemedShirts = 0; // 交換したシャツの枚数
   });
   // 希望種目・休憩は「毎回チェックし直す」方式へ移行。旧データの既定チェックを一度だけ全解除する
   if (!s.prefOptInV1) {
     s.members.forEach(m => { m.playPref = "none"; m.rest = false; });
     s.prefOptInV1 = true;
   }
-  // 妖精ポイントはレート・参加回数から常に導出する（レート ＋ 参加回数×50）
-  s.members.forEach(m => m.points = Math.round(m.rating || 0) + (m.attendCount || 0) * ATTEND_POINTS);
+  // 妖精ポイントを導出（レート ＋ 参加回数×100 ＋ 紹介ボーナス − 交換で消費した分）
+  s.members.forEach(m => m.points = pointsOf(m));
   // 同名メンバーの重複を統合（改名や同期の行き違いで生じた二重登録を自己修復）。履歴の多い1件だけ残す
   const _activity = m => (m.games || 0) + (m.attendCount || 0);
   const _best = new Map();
@@ -610,6 +623,9 @@ function memberSafe(id) { return member(id) || { name: "（削除済み）", rat
 function pairKey(a, b) { return a < b ? `${a}|${b}` : `${b}|${a}`; }
 function togetherCount(a, b) { return state.togetherCounts[pairKey(a, b)] || 0; }
 function vsCount(a, b) { return state.vsCounts[pairKey(a, b)] || 0; }
+// 今日この場で（スコア未入力でも）すでに組んだペア／当たった相手の回数。同じ組の連続を強く避けるのに使う
+function sessPairCount(a, b) { return session.pairCount[pairKey(a, b)] || 0; }
+function sessVsCount(a, b) { return session.vsCount[pairKey(a, b)] || 0; }
 function courtSize(fmt) { return fmt === "doubles" ? 4 : 2; }
 function rankOf(m) { return RANKS.find(r => (m.attendCount || 0) >= r.min) || null; }
 function today() { return new Date().toISOString().slice(0, 10); }
@@ -635,9 +651,54 @@ function addMember() {
     id: state.nextId++, name, rating: INITIAL_RATING,
     games: 0, wins: 0, attend: true, attendCount: 0, lastAttend: "", points: 0,
     playPref: "none", rest: false,
+    referrals: 0, refBonus: 0, streak: 0, attendBonus: 0, redeemed: 0, redeemedShirts: 0,
   });
   input.value = "";
   save(); renderMembers(); pushState();
+}
+
+// 友達を1人連れてきたとき。会員ランクの倍率をかけた紹介ボーナスを加算する
+function addReferral(id) {
+  const m = member(id);
+  if (!m) return;
+  const mult = rankMult(m);
+  const gain = Math.round(REFERRAL_POINTS * mult);
+  m.referrals = (m.referrals || 0) + 1;
+  m.refBonus = (m.refBonus || 0) + gain;
+  save(); renderMembers(); pushState();
+  alert(`${m.name} さんが友達を紹介！ +${gain}pt（${(rankOf(m) || {}).name || "ランク前"} ×${mult}）`);
+}
+
+// 参加を1回分つける（同じ日は重複しない）。連続参加ボーナス（streak・attendBonus）もここで加算する
+function grantAttendance(m, dateStr) {
+  if (!m || m.lastAttend === dateStr) return;
+  // 前回参加から今回までに「参加しなかった練習日」が無ければ連続とみなす
+  const consec = m.lastAttend && !SCHEDULE.some(d => d > m.lastAttend && d < dateStr);
+  m.streak = consec ? (m.streak || 0) + 1 : 1;
+  m.attendBonus = (m.attendBonus || 0) + Math.round(ATTEND_POINTS * Math.pow(ATTEND_STREAK, Math.floor((m.streak - 1) / STREAK_STEP)));
+  m.attendCount = (m.attendCount || 0) + 1;
+  m.lastAttend = dateStr;
+}
+
+// 今日つけた参加を取り消す（当日不参加になった人の参加ポイントを1回分戻す）
+function revokeTodayAttendance(m) {
+  if (!m || m.lastAttend !== today()) return false;
+  const back = Math.round(ATTEND_POINTS * Math.pow(ATTEND_STREAK, Math.floor(((m.streak || 1) - 1) / STREAK_STEP)));
+  m.attendBonus = Math.max(0, (m.attendBonus || 0) - back);
+  m.streak = Math.max(0, (m.streak || 1) - 1);
+  m.attendCount = Math.max(0, (m.attendCount || 0) - 1);
+  m.lastAttend = ""; // 今日は不参加＝連続はいったんリセット
+  return true;
+}
+
+// メンバー行の「参加取消」ボタン用：今日の参加ポイントを戻して不参加にする
+function cancelTodayAttend(id) {
+  const m = member(id);
+  if (!m) return;
+  if (!revokeTodayAttendance(m)) { alert(`${m.name} さんは今日の参加ポイントがまだ付いていません。`); return; }
+  m.attend = false; // あわせて今日は不参加にする
+  save(); renderMembers(); pushState();
+  alert(`${m.name} さんの今日の参加を取り消しました（参加ポイントを1回分戻しました）。`);
 }
 
 function renameMember(id) {
@@ -727,6 +788,11 @@ function renderMembers() {
       const pref = m.playPref || "none";
       const dOn = pref === "both" || pref === "doubles";
       const sOn = pref === "both" || pref === "singles";
+      const pts = pointsOf(m);
+      // 今日の参加ポイントが付いている人だけ「参加取消」ボタンを出す
+      const cancelBtn = m.lastAttend === today()
+        ? `<button class="btn btn-sm btn-outline-warning py-0" onclick="cancelTodayAttend(${m.id})" title="今日の参加を取り消して参加ポイントを戻す">参加取消</button>`
+        : "";
       return `
       <div class="member-row">
         <input class="form-check-input mt-0" type="checkbox" ${m.attend ? "checked" : ""}
@@ -741,7 +807,9 @@ function renderMembers() {
           <label class="pref-chk" title="今回は休憩（試合に入りません）">
             <input type="checkbox" ${m.rest ? "checked" : ""} onchange="toggleRest(${m.id})">休</label>
         </span>
-        <span class="small text-muted">参加${m.attendCount || 0}回・${m.games}戦${m.wins}勝</span>
+        <span class="small text-muted">参加${m.attendCount || 0}回・${m.games}戦${m.wins}勝・紹介${m.referrals || 0}人・${pts}pt</span>
+        <button class="btn btn-sm btn-outline-pk py-0" onclick="addReferral(${m.id})" title="友達を1人連れてきた（紹介ボーナス）">🤝＋</button>
+        ${cancelBtn}
         <button class="btn btn-sm btn-outline-pk py-0" onclick="renameMember(${m.id})">✎</button>
         <button class="btn btn-sm btn-outline-danger py-0" onclick="removeMember(${m.id})">×</button>
       </div>`;
@@ -805,8 +873,18 @@ async function fetchVotes() {
       for (const lm of localMembers) {
         const sm = state.members.find(x => x.name === lm.name);
         if (sm && (lm.attendCount || 0) > (sm.attendCount || 0)) {
-          sm.attendCount = lm.attendCount; sm.lastAttend = lm.lastAttend || sm.lastAttend; changed++;
+          sm.attendCount = lm.attendCount; sm.lastAttend = lm.lastAttend || sm.lastAttend;
+          sm.streak = lm.streak || 0; sm.attendBonus = lm.attendBonus || 0; changed++;
         }
+      }
+      // 紹介・シャツ交換の記録も端末間で最大値を採用（増える一方なので減らさない）
+      for (const lm of localMembers) {
+        const sm = state.members.find(x => x.name === lm.name);
+        if (!sm) continue;
+        if ((lm.referrals || 0) > (sm.referrals || 0)) { sm.referrals = lm.referrals; changed++; }
+        if ((lm.refBonus || 0) > (sm.refBonus || 0)) { sm.refBonus = lm.refBonus; changed++; }
+        if ((lm.redeemed || 0) > (sm.redeemed || 0)) { sm.redeemed = lm.redeemed; changed++; }
+        if ((lm.redeemedShirts || 0) > (sm.redeemedShirts || 0)) { sm.redeemedShirts = lm.redeemedShirts; changed++; }
       }
       // 試合ログを和集合でマージ（削除済みは復活させない）。丸ごと上書きで消えていた結果が積み上がって復元される
       const delSet = new Set([...(state.deletedLogs || []), ...localDeleted]);
@@ -843,17 +921,55 @@ async function fetchVotes() {
   renderPosts();
 }
 
-// メンバー・成績などの共有データをサーバーへ保存（変更のたびに呼ぶ）
+// 未送信の結果がある間、画面下部に警告バナーを出す（試合結果の消失を防ぐ）
+function renderSyncBanner() {
+  let el = document.getElementById("sync-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "sync-banner";
+    el.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:9999;text-align:center;padding:10px 12px;font-weight:bold;font-size:.9rem;box-shadow:0 -2px 8px rgba(0,0,0,.2);display:none;";
+    document.body.appendChild(el);
+  }
+  if (unsyncedSince) {
+    el.style.background = "#ffd43b"; el.style.color = "#5c3c00";
+    el.textContent = "⚠️ 試合結果をサーバーに保存中… 通信が回復すると自動で再送信します。保存が終わるまでこの画面を閉じないでください。";
+    el.style.display = "block";
+  } else {
+    el.style.display = "none";
+  }
+}
+function markUnsynced() { if (!unsyncedSince) unsyncedSince = Date.now(); renderSyncBanner(); }
+function markSynced() {
+  unsyncedSince = 0;
+  if (pushRetryTimer) { clearTimeout(pushRetryTimer); pushRetryTimer = null; }
+  renderSyncBanner();
+}
+
+// メンバー・成績などの共有データをサーバーへ保存（変更のたびに呼ぶ）。
+// 失敗しても自動で複数回リトライ→ダメなら未送信フラグを立て、後で自動再送する（結果の消失を防ぐ）。
+// setState は uid による和集合マージで重複しないため、何度送っても安全（冪等）。
 async function pushState() {
-  if (!SYNC_URL || state.members.length === 0) return;
-  try {
-    const res = await fetch(SYNC_URL, {
-      method: "POST",
-      body: JSON.stringify({ action: "setState", state }),
-    });
-    const data = await res.json();
-    if (data.ok) { applyServerData(data); syncStatus = "ok"; renderSchedule(); }
-  } catch (e) { console.warn("pushState failed", e); }
+  if (!SYNC_URL || state.members.length === 0) return false;
+  const attempts = 4;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(SYNC_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "setState", state }),
+      });
+      const data = await res.json();
+      if (data && data.ok) { applyServerData(data); syncStatus = "ok"; markSynced(); renderSchedule(); return true; }
+      throw new Error("bad response");
+    } catch (e) {
+      console.warn("pushState attempt " + (i + 1) + "/" + attempts + " failed", e);
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, 800 * (i + 1)));
+    }
+  }
+  // 全リトライ失敗＝サーバー未反映。バナーを出し、15秒後に自動再送を予約
+  syncStatus = "error";
+  markUnsynced();
+  if (!pushRetryTimer) pushRetryTimer = setTimeout(() => { pushRetryTimer = null; pushState(); }, 15000);
+  return false;
 }
 
 async function voteAttend(iso, choice) {
@@ -971,15 +1087,29 @@ function renderSchedule() {
 }
 
 // ================= ポイントランキング =================
-// 妖精ポイントはレートと参加回数から常に導出する（レート ＋ 参加回数×50）
+// 会員ランク（参加回数）に応じた紹介ボーナスの倍率。ランクが高いほど貯まりやすい
+function rankMult(m) {
+  const r = rankOf(m);
+  if (r && r.name === "ダイヤモンド") return 2;
+  if (r && r.name === "ゴールド") return 1.5;
+  return 1; // シルバー・ランク前
+}
+// 妖精ポイント ＝ レート ＋ 参加ボーナス（連続参加で増加）＋ 紹介ボーナス
+function pointsOf(m) {
+  return Math.round(m.rating || 0) + (m.attendBonus || 0)
+       + (m.refBonus || 0) - (m.redeemed || 0);
+}
 function refreshPoints() {
-  state.members.forEach(m => m.points = Math.round(m.rating || 0) + (m.attendCount || 0) * ATTEND_POINTS);
+  state.members.forEach(m => m.points = pointsOf(m));
 }
 function renderRanking() {
   refreshPoints(); // 表示前に最新のレート・参加回数からポイントを算出
   // ランキングはPC用（右カラム）とスマホ用（メイン内）の2か所に描画する
   document.querySelectorAll(".ranking-legend").forEach(el => el.innerHTML =
-    `妖精ポイント ＝ レート ＋ 参加回数×${ATTEND_POINTS}（参加は1日1回）。勝敗はレート（イロ方式）に反映されます。`);
+    `妖精ポイント ＝ レート ＋ 参加ボーナス ＋ 紹介ボーナス。`
+    + `参加は${STREAK_STEP}連続ごとに1回のポイントが${ATTEND_STREAK}倍アップ（基本${ATTEND_POINTS}pt）。`
+    + `🤝紹介1人＝${REFERRAL_POINTS}pt（🥈×1 / 🥇×1.5 / 💎×2）。`
+    + `🎽 ${SHIRT_COST}pt でシャツと交換。`);
   let html;
   if (state.members.length === 0) {
     html = `<p class="text-muted small mb-0">メンバーを追加するとランキングが表示されます</p>`;
@@ -1094,13 +1224,7 @@ function generateMatches() {
   // 参加回数カウント＋参加ポイント付与（同じ日は1回のみ）→ 会員ランク・ランキングに反映
   // ※休憩の人も「参加」しているので付与対象
   const t = today();
-  for (const id of attendees) {
-    const m = member(id);
-    if (m.lastAttend !== t) {
-      m.lastAttend = t;
-      m.attendCount = (m.attendCount || 0) + 1;
-    }
-  }
+  for (const id of attendees) grantAttendance(member(id), t); // 参加ポイント＋連続ボーナスを付与
 
   // 希望どおりにダブルス/シングルスの出場グループへ振り分け（出場回数の少ない人を優先）
   const dFair = byFair(available.filter(id => prefOf(id) === "doubles"));
@@ -1122,9 +1246,10 @@ function generateMatches() {
   const mix = Math.random() < 0.3;
 
   // ランダム候補を大量生成してスコアリング（低ペナルティを採用）。
-  // ダブルス枠はダブルス希望グループ、シングルス枠はシングルス希望グループから割り当てるので、希望は必ず守られる
+  // ダブルス枠はダブルス希望グループ、シングルス枠はシングルス希望グループから割り当てるので、希望は必ず守られる。
+  // penalty に小さなランダムのゆらぎを足すことで、被り・バランスが同程度の候補の中では毎回ちがう組を選ぶ＝同じ組への収束を防ぐ。
   let best = null, bestPenalty = Infinity;
-  for (let iter = 0; iter < 500; iter++) {
+  for (let iter = 0; iter < 800; iter++) {
     const ds = [...doublesGroup].sort(() => Math.random() - 0.5);
     const ss = [...singlesGroup].sort(() => Math.random() - 0.5);
     const cand = [];
@@ -1138,8 +1263,17 @@ function generateMatches() {
         cand.push({ format: fmt, teamA: [g[0]], teamB: [g[1]] });
       }
     }
-    const p = penalty(cand, mix);
+    const p = penalty(cand, mix) + Math.random() * 60; // ゆらぎ（被り回避1200等より十分小さいので被り回避は崩さない）
     if (p < bestPenalty) { bestPenalty = p; best = cand; }
+  }
+
+  // 選んだ組を「今日すでに組んだ／当たった」として記録（スコア未入力でも次の生成で避けられる）
+  for (const c of best) {
+    if (c.format === "doubles") {
+      bump(session.pairCount, pairKey(c.teamA[0], c.teamA[1]));
+      bump(session.pairCount, pairKey(c.teamB[0], c.teamB[1]));
+    }
+    for (const a of c.teamA) for (const b of c.teamB) bump(session.vsCount, pairKey(a, b));
   }
 
   state.currentMatches = {
@@ -1157,13 +1291,17 @@ function penalty(cand, mix) {
     const rA = teamA.reduce((s, id) => s + member(id).rating, 0);
     const rB = teamB.reduce((s, id) => s + member(id).rating, 0);
 
-    // 1) 過去のペア被り（最重要・重いペナルティ）
+    // 1) ペア被り。今日その場で組んだ被り（session）は過去履歴より圧倒的に強く避ける＝同じ組の連続を防ぐ
     if (format === "doubles") {
       p += 250 * (Math.pow(togetherCount(teamA[0], teamA[1]), 1.5)
                 + Math.pow(togetherCount(teamB[0], teamB[1]), 1.5));
+      p += 1200 * (sessPairCount(teamA[0], teamA[1]) + sessPairCount(teamB[0], teamB[1]));
     }
-    // 対戦相手の被りは軽めに回避
-    for (const a of teamA) for (const b of teamB) p += 40 * vsCount(a, b);
+    // 対戦相手の被り。今日すでに当たった相手も強めに避ける
+    for (const a of teamA) for (const b of teamB) {
+      p += 40 * vsCount(a, b);
+      p += 200 * sessVsCount(a, b);
+    }
 
     // 2) チーム間のパワーバランス（合計レーティング差）
     p += Math.abs(rA - rB);
@@ -1314,10 +1452,7 @@ function recomputeFromLog() {
 function applyMatch(teamA, teamB, sa, sb, format) {
   // 参加回数カウント（同じ日は1回のみ・生成フローと二重にならないよう lastAttend でガード）
   const _t = today();
-  for (const id of [...teamA, ...teamB]) {
-    const m = member(id);
-    if (m && m.lastAttend !== _t) { m.lastAttend = _t; m.attendCount = (m.attendCount || 0) + 1; }
-  }
+  for (const id of [...teamA, ...teamB]) grantAttendance(member(id), _t); // 参加ポイント＋連続ボーナスを付与
   const rA = teamA.reduce((s, id) => s + member(id).rating, 0) / teamA.length;
   const rB = teamB.reduce((s, id) => s + member(id).rating, 0) / teamB.length;
   const delta = ratingDelta(rA, rB, sa, sb);
@@ -1727,8 +1862,12 @@ if (state.currentMatches) renderMatches(); // 前回表示していた対戦表�
 fetchVotes(); // 共有データ（メンバー・成績・対戦表・投票）をサーバーから取得。サーバーが空なら初回共有
 // 他の端末での更新を取り込む: アプリに戻ってきたタイミングで再取得
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") fetchVotes();
+  if (document.visibilityState === "visible") { fetchVotes(); if (unsyncedSince) pushState(); }
 });
+// 通信が回復したら未送信の結果をすぐ再送信
+window.addEventListener("online", () => { if (unsyncedSince) pushState(); });
+// 保険: 未送信ぶんが残っていないか20秒ごとに確認して自動再送
+setInterval(() => { if (unsyncedSince && !pushRetryTimer) pushState(); }, 20000);
 </script>
 </body>
 </html>

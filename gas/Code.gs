@@ -90,9 +90,24 @@ function readState_(ss) {
   try { return JSON.parse(String(v)); } catch (e) { return null; }
 }
 
+// 保存前に共有データを補正する（誤って残った参加記録などをここで一括除去）
+// ここは全書き込みの唯一の関所なので、どの端末から送られても補正が必ず効く
+function sanitizeState_(st) {
+  if (!st || !st.members) return st;
+  st.members.forEach(function (m) {
+    // 池田じゅんの2026-08-02の誤った参加記録を毎回取り消す（本人は当日不参加）
+    if (m && m.name === "池田じゅん" && m.lastAttend === "2026-08-02") {
+      m.attendCount = 0; m.attendBonus = 0; m.streak = 0; m.lastAttend = "";
+      m.redeemed = 0;
+      m.points = Math.round(m.rating || 0) + (m.refBonus || 0);
+    }
+  });
+  return st;
+}
+
 function writeState_(ss, st) {
   var sheet = getSheet_(ss, STATE_SHEET, ["json"]);
-  sheet.getRange(2, 1).setValue(JSON.stringify(st));
+  sheet.getRange(2, 1).setValue(JSON.stringify(sanitizeState_(st)));
 }
 
 // ===== 練習の様子（写真・コメント・応援）=====
