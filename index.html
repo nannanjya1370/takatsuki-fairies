@@ -646,7 +646,29 @@ function addMember() {
   const input = document.getElementById("new-name");
   const name = input.value.trim();
   if (!name) return;
-  if (state.members.some(m => m.name === name)) { alert("同じ名前のメンバーがいます"); return; }
+  // 二重登録を防ぐガード。表記ゆれ（ひらがな⇄漢字・絵文字違い等）による同一人物の重複を入口で止める。
+  // 1) 同名・ほぼ同名が既にいれば追加せず、編集ボタン（✎）での更新を促す
+  const _norm = n => String(n || "").normalize("NFKC").replace(/\s+/g, "");
+  const nn = _norm(name), nk = baseNameKey(name);
+  const similar = state.members.filter(m => {
+    const mn = _norm(m.name);
+    return mn === nn || baseNameKey(m.name) === nk
+        || (nn.length >= 3 && mn.length >= 3 && (mn.includes(nn) || nn.includes(mn)));
+  });
+  if (similar.length) {
+    alert("「" + similar.map(m => m.name).join("」「") + "」さんが既にいます。\n"
+        + "同じ人なら追加せず、その人の ✎（編集）ボタンで名前を更新してください。\n"
+        + "別人の場合は名前を変えてもう一度追加してください。");
+    return;
+  }
+  // 2) 似た名前が無くても、ひらがな⇄漢字など機械では見分けられない同一人物を人の目で確認する
+  if (state.members.length &&
+      !confirm("現在のメンバー：\n" + state.members.map(m => m.name).join("、") + "\n\n"
+        + "この中に本人はいませんか？\n"
+        + "いる場合は追加せず、その人の ✎（編集）ボタンで名前を更新してください。\n\n"
+        + "一覧にいない新しい人なら「OK」で追加します。")) {
+    return;
+  }
   state.members.push({
     id: state.nextId++, name, rating: INITIAL_RATING,
     games: 0, wins: 0, attend: true, attendCount: 0, lastAttend: "", points: 0,
