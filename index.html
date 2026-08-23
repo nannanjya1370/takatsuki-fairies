@@ -466,7 +466,7 @@ let pushRetryTimer = null; // 未送信ぶんの自動再送タイマー
 // ページを開いてからの記録。playCount=出場回数（休憩の公平化）、pairCount/vsCount=今日すでに組んだペア/当たった相手（被り回避）
 let session = { playCount: {}, pairCount: {}, vsCount: {} };
 let courtFormats = ["doubles", "doubles", "doubles"]; // コートごとの形式（UI選択を保持）
-// 今回の対戦 {mix, courts:[{format,teamA,teamB,saved}], resting:[ids]} は state.currentMatches として全端末で共有
+// 今回の対戦 {courts:[{format,teamA,teamB,saved}], resting:[ids]} は state.currentMatches として全端末で共有
 
 function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
@@ -1248,9 +1248,6 @@ function generateMatches() {
   // 出場からあぶれた人＋休憩を選んだ人＋ダ・シ未選択の人が休憩
   const resting = [...forcedRest, ...noPick, ...dFair.slice(di), ...sFair.slice(si), ...bFair.slice(bi)];
 
-  // ★特殊ルール: 約30%でMIX戦（ハンデ戦）
-  const mix = Math.random() < 0.3;
-
   // ランダム候補を大量生成してスコアリング（低ペナルティを採用）。
   // ダブルス枠はダブルス希望グループ、シングルス枠はシングルス希望グループから割り当てるので、希望は必ず守られる。
   // penalty に小さなランダムのゆらぎを足すことで、被り・バランスが同程度の候補の中では毎回ちがう組を選ぶ＝同じ組への収束を防ぐ。
@@ -1269,7 +1266,7 @@ function generateMatches() {
         cand.push({ format: fmt, teamA: [g[0]], teamB: [g[1]] });
       }
     }
-    const p = penalty(cand, mix) + Math.random() * 60; // ゆらぎ（被り回避1200等より十分小さいので被り回避は崩さない）
+    const p = penalty(cand) + Math.random() * 60; // ゆらぎ（被り回避1200等より十分小さいので被り回避は崩さない）
     if (p < bestPenalty) { bestPenalty = p; best = cand; }
   }
 
@@ -1283,14 +1280,13 @@ function generateMatches() {
   }
 
   state.currentMatches = {
-    mix,
     courts: best.map(c => ({ ...c, saved: false })),
     resting,
   };
   save(); renderMembers(); renderMatches(); pushState();
 }
 
-function penalty(cand, mix) {
+function penalty(cand) {
   let p = 0;
   for (const court of cand) {
     const { format, teamA, teamB } = court;
@@ -1312,15 +1308,6 @@ function penalty(cand, mix) {
     // 2) チーム間のパワーバランス（合計レーティング差）
     p += Math.abs(rA - rB);
 
-    // 3) MIX戦: ダブルスはペア内レート差が大きいほど、シングルスは実力差マッチほど選ばれやすく
-    if (mix && format === "doubles") {
-      const gapA = Math.abs(member(teamA[0]).rating - member(teamA[1]).rating);
-      const gapB = Math.abs(member(teamB[0]).rating - member(teamB[1]).rating);
-      p -= 0.8 * (gapA + gapB);
-    }
-    if (mix && format === "singles") {
-      p -= 1.4 * Math.abs(rA - rB);
-    }
   }
   return p;
 }
@@ -1330,9 +1317,7 @@ function renderMatches() {
   const area = document.getElementById("matches-area");
   const badge = document.getElementById("mix-badge");
   card.style.display = "block";
-  badge.innerHTML = state.currentMatches.mix
-    ? `<span class="badge" style="background:#f06595">🎲 MIX戦（ハンデ戦回）</span>`
-    : `<span class="badge" style="background:#f06595">⚖️ バランス戦</span>`;
+  badge.innerHTML = `<span class="badge" style="background:#f06595">⚖️ バランス戦</span>`;
 
   const teamHtml = (ids) => ids.map(id => {
     const m = memberSafe(id);
