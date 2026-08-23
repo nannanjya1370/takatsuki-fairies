@@ -532,6 +532,11 @@ function cleanupDuplicates(s) {
   return true;
 }
 
+// 表記ゆれで別人として二重登録されてしまった同一人物を、正しい名前へ寄せる別名マップ。
+// ひらがな⇄漢字など機械では見分けられない重複は、ここに登録すると全端末で自動統合される（もぐら叩き防止）。
+// 「別名 → 正しい名前」。相手の端末に残った旧名も、次に開いた時にこの表で書き換わって消える。
+const NAME_ALIASES = { "木原健": "きはら" };
+
 // 旧バージョン・サーバー由来のデータに不足フィールドを補完して正規化する
 function normalizeLoadedState(s) {
   s = Object.assign({
@@ -540,6 +545,12 @@ function normalizeLoadedState(s) {
     matchLog: [], matchLogSeq: 0, deletedLogs: [], nextId: 1,
     currentMatches: null, prefOptInV1: false, checksDate: "",
   }, s);
+  // 別名を正しい名前へ統一（メンバー名・試合ログ内の名前の両方）。この後の同名統合で1件にまとまる
+  s.members.forEach(m => { if (NAME_ALIASES[m.name]) m.name = NAME_ALIASES[m.name]; });
+  (s.matchLog || []).forEach(e => {
+    if (Array.isArray(e.teamA)) e.teamA = e.teamA.map(n => NAME_ALIASES[n] || n);
+    if (Array.isArray(e.teamB)) e.teamB = e.teamB.map(n => NAME_ALIASES[n] || n);
+  });
   s.members.forEach(m => {
     if (m.attendCount === undefined) m.attendCount = 0;
     if (m.lastAttend === undefined) m.lastAttend = "";
