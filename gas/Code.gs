@@ -10,7 +10,8 @@
  *          { action: "cheer", postId, name } でがんばれ（応援）をトグル
  *          { action: "postComment", postId, name, text } で投稿にコメント
  *          { action: "deletePost", postId } で投稿を削除（写真もゴミ箱へ）
- *          いずれも最新の全データを返す（GETは posts も含む）
+ *          { action: "setSchedule", dates: ["YYYY-MM-DD", ...] } で練習日程を置き換え（全端末で共有）
+ *          いずれも最新の全データを返す（GETは posts・schedule も含む）
  *
  * データは同じGoogleアカウントのスプレッドシート「高槻妖精会 出欠投票」に保存されます。
  */
@@ -19,6 +20,7 @@ var VOTES_SHEET = "votes";
 var MEMBERS_SHEET = "members";
 var STATE_SHEET = "state";
 var POSTS_SHEET = "posts";
+var SCHEDULE_SHEET = "schedule";
 var TZ = "Asia/Tokyo";
 
 function getSs_() {
@@ -172,8 +174,31 @@ function findPostRow_(sheet, postId) {
   return -1;
 }
 
+// ===== 練習日程（全端末で共有）=====
+function readSchedule_(ss) {
+  var sheet = getSheet_(ss, SCHEDULE_SHEET, ["date"]);
+  var rows = sheet.getDataRange().getValues();
+  var dates = [];
+  var seen = {};
+  for (var i = 1; i < rows.length; i++) {
+    var d = dateKey_(rows[i][0]);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+    if (seen[d]) continue;
+    seen[d] = true; dates.push(d);
+  }
+  dates.sort();
+  return dates;
+}
+
+function writeSchedule_(ss, dates) {
+  var sheet = getSheet_(ss, SCHEDULE_SHEET, ["date"]);
+  sheet.clearContents();
+  var rows = [["date"]].concat(dates.map(function (d) { return [d]; }));
+  sheet.getRange(1, 1, rows.length, 1).setValues(rows);
+}
+
 function payload_(ss) {
-  return { ok: true, votes: readVotes_(ss), members: readMembers_(ss), state: readState_(ss), posts: readPosts_(ss) };
+  return { ok: true, votes: readVotes_(ss), members: readMembers_(ss), state: readState_(ss), posts: readPosts_(ss), schedule: readSchedule_(ss) };
 }
 
 function json_(obj) {
@@ -217,6 +242,22 @@ function doPost(e) {
         if (n && !stSeen[n]) { stSeen[n] = true; stNames.push(n); }
       });
       writeMembers_(ss, stNames);
+      return json_(payload_(ss));
+    }
+
+    // 練習日程を置き換え（全端末で共有。日付は "YYYY-MM-DD" のみ、重複除去・昇順で保存）
+    if (body.action === "setSchedule") {
+      if (!Array.isArray(body.dates)) return json_({ ok: false, error: "bad request" });
+      var seenSch = {};
+      var schDates = [];
+      body.dates.slice(0, 200).forEach(function (x) {
+        var d = String(x).slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+        if (seenSch[d]) return;
+        seenSch[d] = true; schDates.push(d);
+      });
+      schDates.sort();
+      writeSchedule_(ss, schDates);
       return json_(payload_(ss));
     }
 

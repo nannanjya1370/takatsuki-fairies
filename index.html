@@ -415,10 +415,11 @@ const RANKS = [
   { min: 1,  name: "シルバー",     cls: "rank-silver", icon: "🥈" },
 ];
 
-// 練習日程（時間は全日程共通）
+// 練習日程の初期値（時間は全日程共通）。オンラインモードでは、幹事がサイト上で編集した
+// 内容がサーバーに保存され全端末で共有される（getSchedule参照）。ここはサーバー未保存時の既定値。
 const SCHEDULE = [
   "2026-07-05", "2026-08-02", "2026-09-06", "2026-10-04",
-  "2026-11-01", "2026-12-06", "2027-02-07", "2027-03-07",
+  "2027-02-07", "2027-03-07",
 ];
 const SCHEDULE_TIME = "18:00〜21:00";
 // GAS WebアプリのURLを設定すると、投票が全端末で共有・自動集計されるオンラインモードになる。
@@ -456,6 +457,9 @@ let state = {
 let openSched = new Set(); // 回答一覧を開いている日程のindex
 let serverVotes = null;    // オンラインモード時のサーバー上の全投票 { "YYYY-MM-DD": { 名前: "yes"|"no" } }
 let serverMembers = [];    // オンラインモード時のサーバー上のメンバー名簿 [名前]
+let serverSchedule = null; // オンラインモード時のサーバー上の練習日程 ["YYYY-MM-DD"]。未保存ならnull→SCHEDULE(既定値)を使う
+let schedEditing = false;  // 練習日程の編集モード中か
+let pastSchedForEdit = [];  // 編集中に保持する過去日程（編集フォームには出さず、保存時に結合する）
 // 練習の様子の投稿。取得失敗時も消えないよう、最後に取得できた内容を端末にキャッシュして初期表示に使う
 const POSTS_CACHE_KEY = "badminton-posts-cache-v1";
 let serverPosts = (() => { try { return JSON.parse(localStorage.getItem(POSTS_CACHE_KEY) || "[]"); } catch (e) { return []; } })();
@@ -862,6 +866,7 @@ function setVoterName(v) {
 function applyServerData(data) {
   serverVotes = data.votes || {};
   serverMembers = data.members || [];
+  if (Array.isArray(data.schedule)) serverSchedule = data.schedule;
   if (Array.isArray(data.posts)) {
     serverPosts = data.posts;
     try { localStorage.setItem(POSTS_CACHE_KEY, JSON.stringify(serverPosts)); } catch (e) {} // 次回の取得失敗に備えて保存
@@ -1040,6 +1045,11 @@ function toggleSchedDetail(i) {
   renderSchedule();
 }
 
+// 表示に使う練習日程。オンラインでサーバーに保存済みならそれを、無ければ既定値SCHEDULEを使う
+function getSchedule() {
+  return (SYNC_URL && Array.isArray(serverSchedule) && serverSchedule.length) ? serverSchedule : SCHEDULE;
+}
+
 function renderVoterArea() {
   const area = document.getElementById("voter-area");
   if (SYNC_URL) {
@@ -1073,10 +1083,13 @@ function renderSchedule() {
     ? "※日付をタップすると全員の回答が見られます。投票は全員のスマホと自動で共有されます。"
     : "※日付をタップすると全員の回答が見られます。投票はこの端末に保存されます。";
 
+  // 編集モードのときは日程エディタを表示して終了
+  if (schedEditing) { renderScheduleEditor(); return; }
+
   // 過ぎた練習日は一覧から自動で除外（元のインデックスiは保持して開閉状態を保つ）
   const todayIso = localTodayIso();
-  const upcoming = SCHEDULE.map((iso, i) => ({ iso, i })).filter(x => x.iso >= todayIso);
-  document.getElementById("schedule-list").innerHTML = (upcoming.length ? upcoming.map(({ iso, i }) => {
+  const upcoming = getSchedule().map((iso, i) => ({ iso, i })).filter(x => x.iso >= todayIso);
+  const listHtml = (upcoming.length ? upcoming.map(({ iso, i }) => {
     let yesNames, noNames, mine;
     if (SYNC_URL) {
       const v = (serverVotes || {})[iso] || {};
@@ -1111,6 +1124,79 @@ function renderSchedule() {
       ${detail}
     </div>`;
   }).join("") : `<p class="text-muted small mb-0">今後の練習日程はまだ登録されていません。</p>`);
+  // オンラインモードでは日程を全端末共有で編集できる
+  const editBtn = SYNC_URL
+    ? `<div class="mt-2 text-end"><button class="btn btn-sm btn-outline-pk py-0" onclick="startSchedEdit()">✏️ 日程を編集</button></div>`
+    : "";
+  document.getElementById("schedule-list").innerHTML = listHtml + editBtn;
+}
+
+// ===== 練習日程の編集（全端末で共有）=====
+function startSchedEdit() {
+  const todayIso = localTodayIso();
+  // 過去の日程は編集フォームに出さず保持し、保存時にそのまま結合する（履歴を消さない）
+  pastSchedForEdit = getSchedule().filter(iso => iso < todayIso);
+  schedEditing = true;
+  renderSchedule();
+}
+
+function cancelSchedEdit() {
+  schedEditing = false;
+  renderSchedule();
+}
+
+function schedEditRowHtml(iso) {
+  return `
+    <div class="sched-edit-row d-flex align-items-center gap-2 mb-2">
+      <input type="date" class="form-control form-control-sm sched-edit-input" value="${iso}" style="max-width:11rem">
+      <button class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('.sched-edit-row').remove()">削除</button>
+    </div>`;
+}
+
+function renderScheduleEditor() {
+  const todayIso = localTodayIso();
+  const editable = getSchedule().filter(iso => iso >= todayIso).sort();
+  document.getElementById("schedule-list").innerHTML = `
+    <div class="sched-editor">
+      <div id="sched-edit-rows">${editable.map(schedEditRowHtml).join("")}</div>
+      <button class="btn btn-sm btn-outline-pk py-0" onclick="addSchedRow()">＋ 日程を追加</button>
+      <div class="mt-3 d-flex gap-2">
+        <button class="btn btn-sm btn-success" onclick="saveSchedule()">保存（全員に反映）</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="cancelSchedEdit()">キャンセル</button>
+      </div>
+      <div class="small text-muted mt-2">※日付の変更・削除・追加ができます。保存すると全員のスマホに反映されます。過去の日程はそのまま残ります。</div>
+    </div>`;
+}
+
+function addSchedRow() {
+  document.getElementById("sched-edit-rows").insertAdjacentHTML("beforeend", schedEditRowHtml(""));
+}
+
+async function saveSchedule() {
+  if (!SYNC_URL) { alert("オンラインモードでのみ日程を編集できます"); return; }
+  const inputs = [...document.querySelectorAll(".sched-edit-input")];
+  const entered = inputs.map(i => i.value).filter(v => /^\d{4}-\d{2}-\d{2}$/.test(v));
+  // 過去の日程（保持分）と結合し、重複を除いて昇順に
+  const all = [...new Set([...pastSchedForEdit, ...entered])].sort();
+  // 保存中はボタンだけ無効化し、入力フォームは再描画しない（失敗時に入力を失わないため）
+  const btn = document.querySelector(".sched-editor .btn-success");
+  if (btn) { btn.disabled = true; btn.textContent = "保存中…"; }
+  try {
+    const res = await fetch(SYNC_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "setSchedule", dates: all }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "server error");
+    applyServerData(data);
+    schedEditing = false;
+    syncStatus = "ok";
+    renderSchedule();
+  } catch (e) {
+    console.warn("saveSchedule failed", e);
+    alert("日程の保存に失敗しました。通信環境を確認してもう一度お試しください。");
+    if (btn) { btn.disabled = false; btn.textContent = "保存（全員に反映）"; }
+  }
 }
 
 // ================= ポイントランキング =================
