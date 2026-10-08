@@ -1270,10 +1270,6 @@ function updateNeededCount() {
 
 // ================= 組み合わせ生成 =================
 // 出場回数が少ない人を優先する並び（休憩の公平化）
-function byFair(ids) {
-  return [...ids].sort((a, b) =>
-    (session.playCount[a] || 0) - (session.playCount[b] || 0) || Math.random() - 0.5);
-}
 // 参加者の希望種目（ダ／シ）を満たしつつ、なるべく多くの人が出場できるコート構成を選ぶ。
 // 希望どおりに埋められないコートは（後ろ優先で）外す。全パターンから
 // 「出場人数最大 → コート数最大 → 前のコート優先」で最良を1つ選ぶ。
@@ -1329,43 +1325,49 @@ function generateMatches() {
   const t = today();
   for (const id of attendees) grantAttendance(member(id), t); // 参加ポイントを付与（1回=+100pt）
 
-  // 希望どおりにダブルス/シングルスの出場グループへ振り分け（出場回数の少ない人を優先）
-  const dFair = byFair(available.filter(id => prefOf(id) === "doubles"));
-  const sFair = byFair(available.filter(id => prefOf(id) === "singles"));
-  const bFair = byFair(available.filter(id => prefOf(id) === "both"));
-  const doublesGroup = [], singlesGroup = [];
-  let di = 0, si = 0;
-  while (doublesGroup.length < dSlots && di < dFair.length) doublesGroup.push(dFair[di++]);
-  while (singlesGroup.length < sSlots && si < sFair.length) singlesGroup.push(sFair[si++]);
-  let bi = 0;
-  while (bi < bFair.length && (doublesGroup.length < dSlots || singlesGroup.length < sSlots)) {
-    const id = bFair[bi++];
-    if (doublesGroup.length < dSlots) doublesGroup.push(id); else singlesGroup.push(id);
-  }
-  // 出場からあぶれた人＋休憩を選んだ人＋ダ・シ未選択の人が休憩
-  const resting = [...forcedRest, ...noPick, ...dFair.slice(di), ...sFair.slice(si), ...bFair.slice(bi)];
+  // 希望別の出場プール（誰が出るかはループ内でランダムに選ぶ。固定しない）
+  const dPool = available.filter(id => prefOf(id) === "doubles");
+  const sPool = available.filter(id => prefOf(id) === "singles");
+  const bPool = available.filter(id => prefOf(id) === "both");
 
   // ランダム候補を大量生成してスコアリング（低ペナルティを採用）。
-  // ダブルス枠はダブルス希望グループ、シングルス枠はシングルス希望グループから割り当てるので、希望は必ず守られる。
+  // 「誰を出すか」もランダム探索に含めることで、被りのない組を最優先で探せる。
+  // ダブルス枠はダブルス希望プール、シングルス枠はシングルス希望プールから割り当てるので、希望は必ず守られる。
+  // 出場回数の公平性（連続出場の回避）は penalty 内で被り回避より十分小さい係数で効かせる＝被り回避を優先。
   // penalty に小さなランダムのゆらぎを足すことで、被り・バランスが同程度の候補の中では毎回ちがう組を選ぶ＝同じ組への収束を防ぐ。
-  let best = null, bestPenalty = Infinity;
-  for (let iter = 0; iter < 800; iter++) {
-    const ds = [...doublesGroup].sort(() => Math.random() - 0.5);
-    const ss = [...singlesGroup].sort(() => Math.random() - 0.5);
+  let best = null, bestPenalty = Infinity, bestPlayers = null;
+  for (let iter = 0; iter < 1500; iter++) {
+    const d = [...dPool].sort(() => Math.random() - 0.5);
+    const s = [...sPool].sort(() => Math.random() - 0.5);
+    const b = [...bPool].sort(() => Math.random() - 0.5);
+    // 出場者を枠に割り当て（ダ・シ限定で埋め、足りない分を「どちらでもOK」で補う）
+    const dsel = [], ssel = [];
+    let di = 0, si = 0, bi = 0;
+    while (dsel.length < dSlots && di < d.length) dsel.push(d[di++]);
+    while (ssel.length < sSlots && si < s.length) ssel.push(s[si++]);
+    while (bi < b.length && (dsel.length < dSlots || ssel.length < sSlots)) {
+      const id = b[bi++];
+      if (dsel.length < dSlots) dsel.push(id); else ssel.push(id);
+    }
+    if (dsel.length < dSlots || ssel.length < sSlots) continue; // 枠が埋まらない選び方はスキップ
     const cand = [];
     let dp = 0, sp = 0;
     for (const fmt of activeFormats) {
       if (fmt === "doubles") {
-        const g = ds.slice(dp, dp + 4); dp += 4;
+        const g = dsel.slice(dp, dp + 4); dp += 4;
         cand.push({ format: fmt, teamA: [g[0], g[1]], teamB: [g[2], g[3]] });
       } else {
-        const g = ss.slice(sp, sp + 2); sp += 2;
+        const g = ssel.slice(sp, sp + 2); sp += 2;
         cand.push({ format: fmt, teamA: [g[0]], teamB: [g[1]] });
       }
     }
     const p = penalty(cand) + Math.random() * 60; // ゆらぎ（被り回避1200等より十分小さいので被り回避は崩さない）
-    if (p < bestPenalty) { bestPenalty = p; best = cand; }
+    if (p < bestPenalty) { bestPenalty = p; best = cand; bestPlayers = new Set([...dsel, ...ssel]); }
   }
+
+  // 出場できる人のうち best で出場しなかった人＋休憩を選んだ人＋ダ・シ未選択の人が休憩
+  const playing = bestPlayers || new Set();
+  const resting = [...forcedRest, ...noPick, ...available.filter(id => !playing.has(id))];
 
   // 選んだ組を「今日すでに組んだ／当たった」として記録（スコア未入力でも次の生成で避けられる）
   for (const c of best) {
@@ -1405,6 +1407,9 @@ function penalty(cand) {
     // 2) チーム間のパワーバランス（合計レーティング差）
     p += Math.abs(rA - rB);
 
+    // 3) 出場回数の公平性（連続出場を避ける）。被り回避(250/1200/40/200)より十分小さい係数で効かせるので、
+    //    「被りのない組」が常に優先され、被りが同条件のときだけ出場回数の少ない人が選ばれる＝連続出場より被り回避を優先。
+    for (const id of [...teamA, ...teamB]) p += 20 * (session.playCount[id] || 0);
   }
   return p;
 }
