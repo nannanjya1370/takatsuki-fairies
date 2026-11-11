@@ -206,13 +206,25 @@ const SYNC_URL = "https://script.google.com/macros/s/AKfycbyP0mOQd3jgylu03d7If3g
 const CAMP_DATE = "2027-01-10";   // 合宿申込を保存する専用の日付キー（既存サイトの練習日程には出ない）
 const SEP = "｜";                 // 「期生｜氏名」の区切り（全角なので実名と衝突しない）
 
-// 昨年の思い出メディア（Driveの公開ファイル）
+// 昨年の思い出メディア（サイトに同梱・圧縮済み。Drive経由をやめて軽量化）
 const MEDIA = [
-  { type: "img",   id: "1iomB8kw0111wLWZ2ExKANr_f582kll8D" },
-  { type: "img",   id: "1Pa9X2VKQUHeBAZpyzNZdC9pZX219A06-" },
-  { type: "img",   id: "1rVjJX-hzOqc9OfsUXfxFJNnjD3tfUm38" },
-  { type: "video", id: "1aW7pl2IoYsivLPgLXlxREIQBgv9YkJsH" },
-  { type: "video", id: "1b1piLpzuN5xD5Bly_B_fVyNviUO0IFRH" },
+  { type: "img", src: "assets/camp/photos/p01.jpg" },
+  { type: "img", src: "assets/camp/photos/p02.jpg" },
+  { type: "img", src: "assets/camp/photos/p03.jpg" },
+  { type: "img", src: "assets/camp/photos/p04.jpg" },
+  { type: "img", src: "assets/camp/photos/p05.jpg" },
+  { type: "img", src: "assets/camp/photos/p06.jpg" },
+  { type: "img", src: "assets/camp/photos/p07.jpg" },
+  { type: "img", src: "assets/camp/photos/p08.jpg" },
+  { type: "img", src: "assets/camp/photos/p09.jpg" },
+  { type: "img", src: "assets/camp/photos/p10.jpg" },
+  { type: "img", src: "assets/camp/photos/p11.jpg" },
+  { type: "img", src: "assets/camp/photos/p12.jpg" },
+  { type: "img", src: "assets/camp/photos/p13.jpg" },
+  { type: "img", src: "assets/camp/photos/p14.jpg" },
+  { type: "img", src: "assets/camp/photos/p15.jpg" },
+  { type: "video", src: "assets/camp/videos/v1.mp4" },
+  { type: "video", src: "assets/camp/videos/v2.mp4" },
 ];
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
@@ -228,15 +240,15 @@ function buildSlides() {
     const el = document.createElement("div");
     el.className = "slide" + (i === 0 ? " active" : "");
     if (m.type === "img") {
-      // 表示するスライドだけ後から読み込む（初期に3枚まとめて取得しないので軽い）。サイズもw1000に抑制
-      const src = `https://drive.google.com/thumbnail?id=${m.id}&sz=w1000`;
-      el.innerHTML = `<img alt="昨年の様子" decoding="async" ${i === 0 ? `src="${src}"` : `data-src="${src}"`}>`;
+      // 表示するスライドだけ後から読み込む（初期に全部まとめて取得しないので軽い）
+      el.innerHTML = `<img alt="昨年の様子" decoding="async" ${i === 0 ? `src="${m.src}"` : `data-src="${m.src}"`}>`;
     } else {
-      // 動画はタップするまで何も読み込まない（画像サムネも取得しない＝軽い）。再生時のみiframeに差し替える
+      // 動画スライドはプレースホルダだけ置く。表示されたときだけ<video>を生成して自動再生し、離れたら破棄＝軽い
+      el.dataset.video = m.src;
       el.innerHTML =
-        `<div class="video-ph" onclick="playVideo(this,'${m.id}')">` +
+        `<div class="video-ph">` +
         `<div class="video-ph-play">▶</div>` +
-        `<div class="video-ph-text">タップで再生</div>` +
+        `<div class="video-ph-text">まもなく再生 / タップで操作</div>` +
         `</div>`;
     }
     stage.insertBefore(el, stage.querySelector(".slide-nav"));
@@ -248,10 +260,6 @@ function buildSlides() {
   updateSlideUI();
   startAuto();
 }
-function playVideo(box, id) {
-  stopAuto(); // 動画視聴中は自動送りを止める
-  box.outerHTML = `<iframe src="https://drive.google.com/file/d/${id}/preview" allow="autoplay" allowfullscreen></iframe>`;
-}
 function slides() { return stage.querySelectorAll(".slide"); }
 // 表示するスライドの画像をこのタイミングで初めて読み込む（遅延ロード）
 function ensureLoaded(i) {
@@ -260,10 +268,36 @@ function ensureLoaded(i) {
   const img = s.querySelector("img[data-src]");
   if (img) { img.src = img.dataset.src; img.removeAttribute("data-src"); }
 }
+// 動画スライドが表示されたら<video>を生成してミュート自動再生（音はタップで出せる）
+function activateVideo(s) {
+  if (s.querySelector("video")) return;
+  const v = document.createElement("video");
+  v.src = s.dataset.video;
+  v.controls = true; v.muted = true; v.autoplay = true;
+  v.setAttribute("playsinline", ""); v.playsInline = true;
+  v.style.cssText = "width:100%;height:100%;object-fit:contain;background:#000";
+  v.onended = () => { if (slides()[slideIdx] === s) moveSlide(1); }; // 見終わったら次のスライドへ
+  s.querySelector(".video-ph").replaceWith(v);
+  v.play().catch(() => {});
+}
+// 動画スライドから離れたら<video>を破棄して読み込み・再生を止める（メモリと通信を節約）
+function deactivateVideo(s) {
+  const v = s.querySelector("video");
+  if (!v) return;
+  v.pause(); v.removeAttribute("src"); v.load();
+  const ph = document.createElement("div");
+  ph.className = "video-ph";
+  ph.innerHTML = `<div class="video-ph-play">▶</div><div class="video-ph-text">まもなく再生 / タップで操作</div>`;
+  v.replaceWith(ph);
+}
 function updateSlideUI() {
   const ss = slides();
   ensureLoaded(slideIdx);
-  ss.forEach((s, i) => s.classList.toggle("active", i === slideIdx));
+  ss.forEach((s, i) => {
+    const active = i === slideIdx;
+    s.classList.toggle("active", active);
+    if (MEDIA[i].type === "video") { active ? activateVideo(s) : deactivateVideo(s); }
+  });
   [...dotsEl.children].forEach((d, i) => d.classList.toggle("on", i === slideIdx));
   badgeEl.textContent = `${slideIdx + 1} / ${MEDIA.length}　${MEDIA[slideIdx].type === "video" ? "🎬 動画" : "📷 写真"}`;
 }
