@@ -228,7 +228,9 @@ function buildSlides() {
     const el = document.createElement("div");
     el.className = "slide" + (i === 0 ? " active" : "");
     if (m.type === "img") {
-      el.innerHTML = `<img loading="lazy" src="https://drive.google.com/thumbnail?id=${m.id}&sz=w1600" alt="昨年の様子">`;
+      // 表示するスライドだけ後から読み込む（初期に3枚まとめて取得しないので軽い）。サイズもw1000に抑制
+      const src = `https://drive.google.com/thumbnail?id=${m.id}&sz=w1000`;
+      el.innerHTML = `<img alt="昨年の様子" decoding="async" ${i === 0 ? `src="${src}"` : `data-src="${src}"`}>`;
     } else {
       // 動画はタップするまで何も読み込まない（画像サムネも取得しない＝軽い）。再生時のみiframeに差し替える
       el.innerHTML =
@@ -251,8 +253,16 @@ function playVideo(box, id) {
   box.outerHTML = `<iframe src="https://drive.google.com/file/d/${id}/preview" allow="autoplay" allowfullscreen></iframe>`;
 }
 function slides() { return stage.querySelectorAll(".slide"); }
+// 表示するスライドの画像をこのタイミングで初めて読み込む（遅延ロード）
+function ensureLoaded(i) {
+  const s = slides()[i];
+  if (!s) return;
+  const img = s.querySelector("img[data-src]");
+  if (img) { img.src = img.dataset.src; img.removeAttribute("data-src"); }
+}
 function updateSlideUI() {
   const ss = slides();
+  ensureLoaded(slideIdx);
   ss.forEach((s, i) => s.classList.toggle("active", i === slideIdx));
   [...dotsEl.children].forEach((d, i) => d.classList.toggle("on", i === slideIdx));
   badgeEl.textContent = `${slideIdx + 1} / ${MEDIA.length}　${MEDIA[slideIdx].type === "video" ? "🎬 動画" : "📷 写真"}`;
@@ -374,7 +384,7 @@ function renderList() {
 // ===== 起動 =====
 buildSlides();
 loadList();
-setInterval(loadList, 30000);   // 30秒ごとに最新の参加者へ更新
+setInterval(loadList, 60000);   // 60秒ごとに最新の参加者へ更新（自分で登録したときは即時反映される）
 </script>
 </body>
 </html>
