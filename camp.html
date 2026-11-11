@@ -58,6 +58,19 @@
   .slide-stage .slide.active { opacity: 1; }
   .slide-stage img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .slide-stage iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .video-ph {
+    position: absolute; inset: 0; cursor: pointer;
+    background: linear-gradient(135deg, #59344a, #2b1a24);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  }
+  .video-ph-play {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: rgba(240,101,149,.9); color: #fff; font-size: 2rem;
+    display: flex; align-items: center; justify-content: center; padding-left: 5px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  }
+  .video-ph:hover .video-ph-play { background: var(--pk-strong); }
+  .video-ph-text { color: #ffd1dc; font-weight: 700; font-size: .88rem; letter-spacing: 1px; }
   .slide-nav {
     position: absolute; top: 50%; transform: translateY(-50%);
     width: 38px; height: 38px; border-radius: 50%; border: none;
@@ -87,6 +100,9 @@
     border: 1px solid var(--pk-border); border-radius: 10px; background: #fff; color: #59344a;
   }
   select:focus, input[type=text]:focus { outline: none; border-color: var(--pk-strong); box-shadow: 0 0 0 3px rgba(240,101,149,.15); }
+  .gen-input { display: flex; align-items: center; gap: 7px; }
+  .gen-input input { text-align: center; }
+  .gen-suffix { font-weight: 800; color: var(--pk-deep); font-size: 1rem; }
   .row2 { display: flex; gap: 10px; }
   .row2 .field { flex: 1; }
   .btn-main {
@@ -154,13 +170,16 @@
     <div class="card-header">✍️ 参加申込フォーム <small>参加する人だけ登録してください</small></div>
     <div class="card-body">
       <div class="row2">
-        <div class="field" style="flex:0 0 38%">
+        <div class="field" style="flex:0 0 36%">
           <label class="lbl" for="gen">期生</label>
-          <select id="gen"></select>
+          <div class="gen-input">
+            <input type="text" id="gen" inputmode="numeric" placeholder="例：3" maxlength="2" autocomplete="off">
+            <span class="gen-suffix">期</span>
+          </div>
         </div>
         <div class="field">
           <label class="lbl" for="pname">お名前</label>
-          <input type="text" id="pname" placeholder="例：徳野涼也" maxlength="14" autocomplete="off">
+          <input type="text" id="pname" placeholder="例：徳野竜也" maxlength="14" autocomplete="off">
         </div>
       </div>
       <button class="btn-main" id="submit-btn" onclick="submitSignup()">参加登録する 🙋</button>
@@ -211,11 +230,11 @@ function buildSlides() {
     if (m.type === "img") {
       el.innerHTML = `<img loading="lazy" src="https://drive.google.com/thumbnail?id=${m.id}&sz=w1600" alt="昨年の様子">`;
     } else {
-      // 動画はクリックで再生する軽量サムネ。再生時のみiframeに差し替える
+      // 動画はタップするまで何も読み込まない（画像サムネも取得しない＝軽い）。再生時のみiframeに差し替える
       el.innerHTML =
-        `<div style="position:absolute;inset:0;cursor:pointer;background:#000" onclick="playVideo(this,'${m.id}')">` +
-        `<img loading="lazy" style="width:100%;height:100%;object-fit:cover;opacity:.85" src="https://drive.google.com/thumbnail?id=${m.id}&sz=w1600" alt="昨年の動画">` +
-        `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:3.2rem;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.5)">▶</div>` +
+        `<div class="video-ph" onclick="playVideo(this,'${m.id}')">` +
+        `<div class="video-ph-play">▶</div>` +
+        `<div class="video-ph-text">タップで再生</div>` +
         `</div>`;
     }
     stage.insertBefore(el, stage.querySelector(".slide-nav"));
@@ -248,29 +267,22 @@ function startAuto() {
 }
 function stopAuto() { if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; } }
 
-// ===== 期生セレクト =====
-(function buildGenOptions() {
-  const sel = document.getElementById("gen");
-  let html = `<option value="" selected disabled>選択</option>`;
-  for (let g = 1; g <= 20; g++) html += `<option value="${g}期">${g}期</option>`;
-  html += `<option value="その他">その他</option>`;
-  sel.innerHTML = html;
-})();
-
 // ===== 申込の送信 =====
 let members = {};   // CAMP_DATEの参加者 { "3期｜徳野涼也": "yes", ... }
 
 async function submitSignup() {
-  const gen = document.getElementById("gen").value;
+  const genRaw = document.getElementById("gen").value.trim();
   const name = document.getElementById("pname").value.trim();
   const btn = document.getElementById("submit-btn");
   const st = document.getElementById("form-status");
 
-  if (!gen) { st.className = "form-status err"; st.textContent = "期生を選んでください"; return; }
+  if (!genRaw) { st.className = "form-status err"; st.textContent = "期生を入力してください"; return; }
+  if (!/^\d{1,2}$/.test(genRaw)) { st.className = "form-status err"; st.textContent = "期生は数字で入力してください（例：3）"; return; }
   if (!name) { st.className = "form-status err"; st.textContent = "お名前を入力してください"; return; }
   if (name.includes(SEP)) { st.className = "form-status err"; st.textContent = "お名前に「｜」は使えません"; return; }
 
-  const key = gen + SEP + name;        // 「3期｜徳野涼也」
+  const gen = genRaw + "期";
+  const key = gen + SEP + name;        // 「3期｜徳野竜也」
   if (key.length > 20) { st.className = "form-status err"; st.textContent = "お名前が長すぎます"; return; }
 
   btn.disabled = true;
