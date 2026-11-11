@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🏸 高槻妖精会 合宿vol.2</title>
+<style>
+  :root {
+    --pk-bg: #fff5f8;
+    --pk-light: #ffe3ec;
+    --pk-main: #ff8fab;
+    --pk-strong: #f06595;
+    --pk-deep: #c2255c;
+    --pk-border: #ffc9d9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--pk-bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif;
+    color: #59344a; -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 0 12px 48px; }
+
+  /* ヘッダー */
+  .app-header {
+    background: linear-gradient(135deg, #ffd1dc, #ff9eb5);
+    color: #fff; border-bottom: 4px solid var(--pk-main);
+    padding: 22px 16px 20px; text-align: center;
+    border-radius: 0 0 18px 18px; margin-bottom: 18px;
+  }
+  .app-header h1 {
+    margin: 0; font-size: 1.6rem; font-weight: 800;
+    text-shadow: 0 2px 6px rgba(194,37,92,.35);
+  }
+  .app-header h1 .accent { color: var(--pk-deep); }
+  .app-header .sub { font-family: Georgia, "Times New Roman", serif; font-size: 1.05rem; opacity: .95; margin-top: 6px; font-weight: 700; }
+  .app-header .note { font-size: .82rem; opacity: .9; margin-top: 6px; }
+
+  /* カード */
+  .card {
+    border: 1px solid var(--pk-border); border-radius: 14px; overflow: hidden;
+    background: #fff; margin-bottom: 18px; box-shadow: 0 2px 10px rgba(194,37,92,.06);
+  }
+  .card-header {
+    background: var(--pk-light); color: var(--pk-deep);
+    border-bottom: 2px solid var(--pk-main);
+    padding: 11px 14px; font-weight: 800; font-size: 1.02rem;
+  }
+  .card-header small { font-weight: 600; opacity: .8; font-size: .76rem; }
+  .card-body { padding: 14px; }
+
+  /* 思い出スライド */
+  .slide-stage {
+    position: relative; width: 100%; aspect-ratio: 4 / 3;
+    background: #fff0f5; border-radius: 10px; overflow: hidden;
+  }
+  .slide-stage .slide { position: absolute; inset: 0; opacity: 0; transition: opacity .6s ease; }
+  .slide-stage .slide.active { opacity: 1; }
+  .slide-stage img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .slide-stage iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .slide-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 38px; height: 38px; border-radius: 50%; border: none;
+    background: rgba(240,101,149,.8); color: #fff; font-size: 1.2rem; font-weight: 800;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 3;
+  }
+  .slide-nav:hover { background: var(--pk-deep); }
+  .slide-nav.prev { left: 8px; }
+  .slide-nav.next { right: 8px; }
+  .slide-dots { display: flex; gap: 7px; justify-content: center; margin-top: 10px; }
+  .slide-dots button {
+    width: 9px; height: 9px; border-radius: 50%; border: none; padding: 0;
+    background: var(--pk-border); cursor: pointer;
+  }
+  .slide-dots button.on { background: var(--pk-strong); transform: scale(1.25); }
+  .slide-badge {
+    position: absolute; left: 10px; top: 10px; z-index: 3;
+    background: rgba(255,255,255,.85); color: var(--pk-deep);
+    font-size: .72rem; font-weight: 800; padding: 3px 9px; border-radius: 999px;
+  }
+
+  /* フォーム */
+  label.lbl { font-weight: 700; color: var(--pk-deep); font-size: .88rem; display: block; margin-bottom: 4px; }
+  .field { margin-bottom: 12px; }
+  select, input[type=text] {
+    width: 100%; padding: 10px 12px; font-size: 1rem;
+    border: 1px solid var(--pk-border); border-radius: 10px; background: #fff; color: #59344a;
+  }
+  select:focus, input[type=text]:focus { outline: none; border-color: var(--pk-strong); box-shadow: 0 0 0 3px rgba(240,101,149,.15); }
+  .row2 { display: flex; gap: 10px; }
+  .row2 .field { flex: 1; }
+  .btn-main {
+    width: 100%; background: var(--pk-main); border: 2px solid var(--pk-strong);
+    color: #fff; font-weight: 800; letter-spacing: 1px; font-size: 1.05rem;
+    padding: 12px; border-radius: 10px; cursor: pointer; transition: .15s;
+  }
+  .btn-main:hover:not(:disabled) { background: var(--pk-strong); border-color: var(--pk-deep); }
+  .btn-main:disabled { opacity: .55; cursor: default; }
+  .form-status { text-align: center; font-size: .86rem; margin-top: 10px; min-height: 1.2em; font-weight: 700; }
+  .form-status.ok { color: var(--pk-deep); }
+  .form-status.err { color: #c92a2a; }
+
+  /* 参加者リスト */
+  .count-badge {
+    display: inline-block; background: var(--pk-strong); color: #fff;
+    font-weight: 800; border-radius: 999px; padding: 2px 12px; font-size: .9rem;
+  }
+  .gen-group { margin-bottom: 14px; }
+  .gen-title {
+    font-weight: 800; color: var(--pk-deep); font-size: .9rem;
+    border-left: 5px solid var(--pk-main); padding-left: 8px; margin-bottom: 7px;
+  }
+  .name-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .name-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #fff0f5; border: 1px solid var(--pk-border); border-radius: 999px;
+    padding: 5px 7px 5px 12px; font-weight: 700; font-size: .92rem; color: #59344a;
+  }
+  .name-chip .del {
+    border: none; background: var(--pk-border); color: #fff; font-weight: 800;
+    width: 20px; height: 20px; border-radius: 50%; cursor: pointer; line-height: 1; font-size: .8rem;
+  }
+  .name-chip .del:hover { background: var(--pk-deep); }
+  .empty-note { color: #b08698; font-size: .9rem; text-align: center; padding: 10px 0; }
+  .loading { color: #b08698; font-size: .9rem; text-align: center; padding: 14px 0; }
+  .foot { text-align: center; font-size: .76rem; color: #b08698; margin-top: 8px; }
+  a.plain { color: var(--pk-deep); }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <h1>🏸 高槻<span class="accent">妖精会</span> 合宿 vol.2</h1>
+  <div class="sub">2027.1.9 (土) 〜 1.10 (日) ・ 1泊2日</div>
+  <div class="note">詳細は参加者をグループLINEにご招待してお知らせします 💬</div>
+</header>
+
+<div class="wrap">
+
+  <!-- 昨年の思い出 -->
+  <div class="card">
+    <div class="card-header">📸 昨年(vol.1)の様子 <small>写真・動画が自動で流れます</small></div>
+    <div class="card-body">
+      <div class="slide-stage" id="stage">
+        <span class="slide-badge" id="slide-badge"></span>
+        <button class="slide-nav prev" onclick="moveSlide(-1)" aria-label="前へ">‹</button>
+        <button class="slide-nav next" onclick="moveSlide(1)" aria-label="次へ">›</button>
+      </div>
+      <div class="slide-dots" id="dots"></div>
+    </div>
+  </div>
+
+  <!-- 参加フォーム -->
+  <div class="card">
+    <div class="card-header">✍️ 参加申込フォーム <small>参加する人だけ登録してください</small></div>
+    <div class="card-body">
+      <div class="row2">
+        <div class="field" style="flex:0 0 38%">
+          <label class="lbl" for="gen">期生</label>
+          <select id="gen"></select>
+        </div>
+        <div class="field">
+          <label class="lbl" for="pname">お名前</label>
+          <input type="text" id="pname" placeholder="例：徳野涼也" maxlength="14" autocomplete="off">
+        </div>
+      </div>
+      <button class="btn-main" id="submit-btn" onclick="submitSignup()">参加登録する 🙋</button>
+      <div class="form-status" id="form-status"></div>
+    </div>
+  </div>
+
+  <!-- 参加者リスト -->
+  <div class="card">
+    <div class="card-header">🙋 現時点の参加者 <span class="count-badge" id="total-count">–</span></div>
+    <div class="card-body">
+      <div id="list-area"><div class="loading">読み込み中…</div></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <a class="plain" href="./index.html">← 妖精会トップ（練習・チーム分け）へ</a>
+  </div>
+</div>
+
+<script>
+// ===== 設定 =====
+const SYNC_URL = "https://script.google.com/macros/s/AKfycbyP0mOQd3jgylu03d7If3g-Yd979WQXoN5sat2VDoBM-CMoyCDyp1EgyjpjIMaTxcUD/exec";
+const CAMP_DATE = "2027-01-10";   // 合宿申込を保存する専用の日付キー（既存サイトの練習日程には出ない）
+const SEP = "｜";                 // 「期生｜氏名」の区切り（全角なので実名と衝突しない）
+
+// 昨年の思い出メディア（Driveの公開ファイル）
+const MEDIA = [
+  { type: "img",   id: "1iomB8kw0111wLWZ2ExKANr_f582kll8D" },
+  { type: "img",   id: "1Pa9X2VKQUHeBAZpyzNZdC9pZX219A06-" },
+  { type: "img",   id: "1rVjJX-hzOqc9OfsUXfxFJNnjD3tfUm38" },
+  { type: "video", id: "1aW7pl2IoYsivLPgLXlxREIQBgv9YkJsH" },
+  { type: "video", id: "1b1piLpzuN5xD5Bly_B_fVyNviUO0IFRH" },
+];
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+
+// ===== 思い出スライド =====
+let slideIdx = 0, slideTimer = null;
+const stage = document.getElementById("stage");
+const dotsEl = document.getElementById("dots");
+const badgeEl = document.getElementById("slide-badge");
+
+function buildSlides() {
+  MEDIA.forEach((m, i) => {
+    const el = document.createElement("div");
+    el.className = "slide" + (i === 0 ? " active" : "");
+    if (m.type === "img") {
+      el.innerHTML = `<img loading="lazy" src="https://drive.google.com/thumbnail?id=${m.id}&sz=w1600" alt="昨年の様子">`;
+    } else {
+      // 動画はクリックで再生する軽量サムネ。再生時のみiframeに差し替える
+      el.innerHTML =
+        `<div style="position:absolute;inset:0;cursor:pointer;background:#000" onclick="playVideo(this,'${m.id}')">` +
+        `<img loading="lazy" style="width:100%;height:100%;object-fit:cover;opacity:.85" src="https://drive.google.com/thumbnail?id=${m.id}&sz=w1600" alt="昨年の動画">` +
+        `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:3.2rem;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.5)">▶</div>` +
+        `</div>`;
+    }
+    stage.insertBefore(el, stage.querySelector(".slide-nav"));
+
+    const dot = document.createElement("button");
+    dot.onclick = () => goSlide(i);
+    dotsEl.appendChild(dot);
+  });
+  updateSlideUI();
+  startAuto();
+}
+function playVideo(box, id) {
+  stopAuto(); // 動画視聴中は自動送りを止める
+  box.outerHTML = `<iframe src="https://drive.google.com/file/d/${id}/preview" allow="autoplay" allowfullscreen></iframe>`;
+}
+function slides() { return stage.querySelectorAll(".slide"); }
+function updateSlideUI() {
+  const ss = slides();
+  ss.forEach((s, i) => s.classList.toggle("active", i === slideIdx));
+  [...dotsEl.children].forEach((d, i) => d.classList.toggle("on", i === slideIdx));
+  badgeEl.textContent = `${slideIdx + 1} / ${MEDIA.length}　${MEDIA[slideIdx].type === "video" ? "🎬 動画" : "📷 写真"}`;
+}
+function goSlide(i) { slideIdx = (i + MEDIA.length) % MEDIA.length; updateSlideUI(); startAuto(); }
+function moveSlide(d) { goSlide(slideIdx + d); }
+function startAuto() {
+  stopAuto();
+  // 写真は5秒で自動送り。動画スライドは自動送りしない（視聴の邪魔をしない）
+  if (MEDIA[slideIdx].type === "video") return;
+  slideTimer = setTimeout(() => moveSlide(1), 5000);
+}
+function stopAuto() { if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; } }
+
+// ===== 期生セレクト =====
+(function buildGenOptions() {
+  const sel = document.getElementById("gen");
+  let html = `<option value="" selected disabled>選択</option>`;
+  for (let g = 1; g <= 20; g++) html += `<option value="${g}期">${g}期</option>`;
+  html += `<option value="その他">その他</option>`;
+  sel.innerHTML = html;
+})();
+
+// ===== 申込の送信 =====
+let members = {};   // CAMP_DATEの参加者 { "3期｜徳野涼也": "yes", ... }
+
+async function submitSignup() {
+  const gen = document.getElementById("gen").value;
+  const name = document.getElementById("pname").value.trim();
+  const btn = document.getElementById("submit-btn");
+  const st = document.getElementById("form-status");
+
+  if (!gen) { st.className = "form-status err"; st.textContent = "期生を選んでください"; return; }
+  if (!name) { st.className = "form-status err"; st.textContent = "お名前を入力してください"; return; }
+  if (name.includes(SEP)) { st.className = "form-status err"; st.textContent = "お名前に「｜」は使えません"; return; }
+
+  const key = gen + SEP + name;        // 「3期｜徳野涼也」
+  if (key.length > 20) { st.className = "form-status err"; st.textContent = "お名前が長すぎます"; return; }
+
+  btn.disabled = true;
+  st.className = "form-status"; st.textContent = "登録中…";
+  try {
+    await fetch(SYNC_URL, {
+      method: "POST",
+      body: JSON.stringify({ date: CAMP_DATE, name: key, choice: "yes" }),
+    });
+    st.className = "form-status ok"; st.textContent = `${name} さんを登録しました！ありがとう 🎉`;
+    document.getElementById("pname").value = "";
+    document.getElementById("gen").value = "";
+    await loadList();
+  } catch (e) {
+    st.className = "form-status err"; st.textContent = "通信に失敗しました。もう一度お試しください";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function cancelSignup(key, label) {
+  if (!confirm(`「${label}」さんの参加登録を取り消しますか？`)) return;
+  try {
+    await fetch(SYNC_URL, {
+      method: "POST",
+      body: JSON.stringify({ date: CAMP_DATE, name: key, choice: "clear" }),
+    });
+    await loadList();
+  } catch (e) {
+    alert("通信に失敗しました。もう一度お試しください");
+  }
+}
+
+// ===== 参加者リストの読み込み・描画 =====
+async function loadList() {
+  const area = document.getElementById("list-area");
+  try {
+    let data = null;
+    for (let t = 0; t < 3 && !data; t++) {          // GASが稀にHTMLエラーを返すのでリトライ
+      try {
+        const res = await fetch(SYNC_URL, { cache: "no-store" });
+        data = await res.json();
+      } catch (e) { await new Promise(r => setTimeout(r, 600)); }
+    }
+    members = (data && data.votes && data.votes[CAMP_DATE]) ? data.votes[CAMP_DATE] : {};
+    renderList();
+  } catch (e) {
+    area.innerHTML = `<div class="empty-note">読み込みに失敗しました。更新してください。</div>`;
+  }
+}
+
+function genRank(g) {              // 「3期」→3、「その他」→999 で並べる
+  const m = String(g).match(/^(\d+)期$/);
+  return m ? Number(m[1]) : 999;
+}
+
+function renderList() {
+  const area = document.getElementById("list-area");
+  const keys = Object.keys(members).filter(k => members[k] === "yes");
+  document.getElementById("total-count").textContent = keys.length + "人";
+
+  if (!keys.length) {
+    area.innerHTML = `<div class="empty-note">まだ参加者はいません。<br>いちばん乗りで登録しよう！🏸</div>`;
+    return;
+  }
+
+  // 期生ごとにグループ化
+  const groups = {};
+  keys.forEach(k => {
+    const idx = k.indexOf(SEP);
+    const gen = idx >= 0 ? k.slice(0, idx) : "未設定";
+    const name = idx >= 0 ? k.slice(idx + 1) : k;
+    (groups[gen] = groups[gen] || []).push({ key: k, name });
+  });
+
+  const order = Object.keys(groups).sort((a, b) => genRank(a) - genRank(b));
+  area.innerHTML = order.map(gen => {
+    const chips = groups[gen]
+      .sort((a, b) => a.name.localeCompare(b.name, "ja"))
+      .map(p =>
+        `<span class="name-chip">${esc(p.name)}` +
+        `<button class="del" title="取り消す" onclick="cancelSignup('${esc(p.key).replace(/'/g, "\\'")}','${esc(p.name).replace(/'/g, "\\'")}')">×</button>` +
+        `</span>`
+      ).join("");
+    return `<div class="gen-group"><div class="gen-title">${esc(gen)}（${groups[gen].length}人）</div><div class="name-chips">${chips}</div></div>`;
+  }).join("");
+}
+
+// ===== 起動 =====
+buildSlides();
+loadList();
+setInterval(loadList, 30000);   // 30秒ごとに最新の参加者へ更新
+</script>
+</body>
+</html>
