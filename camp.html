@@ -173,7 +173,7 @@
         <div class="field" style="flex:0 0 36%">
           <label class="lbl" for="gen">期生</label>
           <div class="gen-input">
-            <input type="text" id="gen" inputmode="numeric" placeholder="例：3" maxlength="2" autocomplete="off">
+            <input type="text" id="gen" inputmode="numeric" placeholder="例：73" maxlength="2" autocomplete="off">
             <span class="gen-suffix">期</span>
           </div>
         </div>
@@ -218,7 +218,7 @@ const MEDIA = [
   { type: "img", src: "assets/camp/photos/p08.jpg" },
   { type: "img", src: "assets/camp/photos/p09.jpg" },
   { type: "img", src: "assets/camp/photos/p10.jpg" },
-  { type: "img", src: "assets/camp/photos/p11.jpg" },
+  { type: "img", src: "assets/camp/photos/p11.jpg", pos: "center top" },  // 縦長写真。箱を持ち上げる人の顔(上部)が切れないよう上寄せ表示
   { type: "img", src: "assets/camp/photos/p12.jpg" },
   { type: "img", src: "assets/camp/photos/p13.jpg" },
   { type: "img", src: "assets/camp/photos/p14.jpg" },
@@ -241,7 +241,8 @@ function buildSlides() {
     el.className = "slide" + (i === 0 ? " active" : "");
     if (m.type === "img") {
       // 表示するスライドだけ後から読み込む（初期に全部まとめて取得しないので軽い）
-      el.innerHTML = `<img alt="昨年の様子" decoding="async" ${i === 0 ? `src="${m.src}"` : `data-src="${m.src}"`}>`;
+      const posStyle = m.pos ? ` style="object-position:${m.pos}"` : "";
+      el.innerHTML = `<img alt="昨年の様子" decoding="async"${posStyle} ${i === 0 ? `src="${m.src}"` : `data-src="${m.src}"`}>`;
     } else {
       // 動画スライドはプレースホルダだけ置く。表示されたときだけ<video>を生成して自動再生し、離れたら破棄＝軽い
       el.dataset.video = m.src;
