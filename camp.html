@@ -218,7 +218,7 @@ const MEDIA = [
   { type: "img", src: "assets/camp/photos/p08.jpg" },
   { type: "img", src: "assets/camp/photos/p09.jpg" },
   { type: "img", src: "assets/camp/photos/p10.jpg" },
-  { type: "img", src: "assets/camp/photos/p11.jpg", pos: "center top" },  // 縦長写真。箱を持ち上げる人の顔(上部)が切れないよう上寄せ表示
+  { type: "img", src: "assets/camp/photos/p11.jpg", fit: "contain" },  // 縦長写真。顔(上)も手元の箱(下)も入るよう全体表示
   { type: "img", src: "assets/camp/photos/p12.jpg" },
   { type: "img", src: "assets/camp/photos/p13.jpg" },
   { type: "img", src: "assets/camp/photos/p14.jpg" },
@@ -241,7 +241,10 @@ function buildSlides() {
     el.className = "slide" + (i === 0 ? " active" : "");
     if (m.type === "img") {
       // 表示するスライドだけ後から読み込む（初期に全部まとめて取得しないので軽い）
-      const posStyle = m.pos ? ` style="object-position:${m.pos}"` : "";
+      let css = "";
+      if (m.fit) css += `object-fit:${m.fit};`;
+      if (m.pos) css += `object-position:${m.pos};`;
+      const posStyle = css ? ` style="${css}"` : "";
       el.innerHTML = `<img alt="昨年の様子" decoding="async"${posStyle} ${i === 0 ? `src="${m.src}"` : `data-src="${m.src}"`}>`;
     } else {
       // 動画スライドはプレースホルダだけ置く。表示されたときだけ<video>を生成して自動再生し、離れたら破棄＝軽い
