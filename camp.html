@@ -277,12 +277,16 @@ function activateVideo(s) {
   if (s.querySelector("video")) return;
   const v = document.createElement("video");
   v.src = s.dataset.video;
-  v.controls = true; v.muted = true; v.autoplay = true;
+  v.controls = true; v.autoplay = true;
   v.setAttribute("playsinline", ""); v.playsInline = true;
   v.style.cssText = "width:100%;height:100%;object-fit:contain;background:#000";
   v.onended = () => { if (slides()[slideIdx] === s) moveSlide(1); }; // 見終わったら次のスライドへ
+  // 動画をタップしたら「音ありでじっくり見る」モード：自動送りを止め、短い動画でも繰り返し再生
+  v.addEventListener("click", () => { stopAuto(); v.muted = false; v.onended = null; v.loop = true; });
   s.querySelector(".video-ph").replaceWith(v);
-  v.play().catch(() => {});
+  // まず音ありで再生を試し、ブラウザの自動再生ポリシーに拒否されたらミュートで再生
+  v.muted = false;
+  v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
 }
 // 動画スライドから離れたら<video>を破棄して読み込み・再生を止める（メモリと通信を節約）
 function deactivateVideo(s) {
